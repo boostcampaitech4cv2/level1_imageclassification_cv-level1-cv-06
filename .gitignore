@@ -1,5 +1,3 @@
-T4064/train_data/
-T4064/submission/
-eval/
-train/
-._train
+T4064/dataset
+T4064/submission
+eval
