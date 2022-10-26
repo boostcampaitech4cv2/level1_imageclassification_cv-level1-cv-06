@@ -39,11 +39,11 @@ class CustomTrainDataset(Dataset):
 
 
 class CustomTestDataset(Dataset):
-    ## input pd.Series
+    ## input list
     ## output np.ndarray
 
-    def __init__(self, img_paths:pd.Series, transforms=None):
-        self.img_paths = img_paths.to_numpy()
+    def __init__(self, img_paths:list, transforms=None):
+        self.img_paths = img_paths
         self.transforms = transforms
         assert self.transforms is not None, 'you must use transforms in Testset'
 

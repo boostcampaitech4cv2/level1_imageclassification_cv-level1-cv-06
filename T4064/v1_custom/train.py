@@ -107,7 +107,7 @@ def train(data_dir, model_dir, args):
     #####
     seed_everything(args.seed)
 
-    save_dir = increment_path(os.path.join(model_dir, args.name))
+    save_dir = increment_path(os.path.join(model_dir, args.checkpoint_name))
 
     # -- settings
     use_cuda = torch.cuda.is_available()
@@ -280,7 +280,7 @@ if __name__ == '__main__':
 
     # Data and model checkpoints directories
     ## folder_name is made by args.name
-    parser.add_argument('--name', default='good_night', help='model save at {SM_MODEL_DIR}/{name}')
+    parser.add_argument('--checkpoint_name', default='good_night', help='model save at {SM_MODEL_DIR}/{checkpoint_name}')
     parser.add_argument('--model_name', type=str, default='efficientnet_b3_pruned')
     parser.add_argument('--n_classes', type=int, default=18, help='number_of_class')
     parser.add_argument('--seed', type=int, default=42, help='random seed (default: 42)')
@@ -291,10 +291,11 @@ if __name__ == '__main__':
     parser.add_argument('--val_ratio', type=float, default=0.3, help='ratio for validaton (default: 0.2)')
     parser.add_argument('--lr_decay_step', type=int, default=20, help='learning rate scheduler deacy step (default: 20)')
     parser.add_argument('--log_interval', type=int, default=20, help='how many batches to wait before logging training status')
+    parser.add_argument('--stratify', type=str, default='class')
+    parser.add_argument('--label_col', type=str, default='class')
+
     parser.add_argument('--data_dir', type=str, default=os.environ.get('SM_CHANNEL_TRAIN', './T4064/dataset/train/images'))
     parser.add_argument('--model_dir', type=str, default=os.environ.get('SM_MODEL_DIR', './T4064/checkpoints'))
-    parser.add_argument('--label_col', type=str, default='class')
-    parser.add_argument('--stratify', type=str, default='class')
 
     args = parser.parse_args()
 
