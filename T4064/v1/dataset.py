@@ -88,8 +88,11 @@ class MaskBaseDataset(Dataset):
     gender_labels = []
     age_labels = []
 
+    ## if instance created
     def __init__(self, data_dir, mean=(0.548, 0.504, 0.479), std=(0.237, 0.247, 0.246), val_ratio=0.2):
         self.data_dir = data_dir
+
+        ## get mean, std and valid_set ratio
         self.mean = mean
         self.std = std
         self.val_ratio = val_ratio
