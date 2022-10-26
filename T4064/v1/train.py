@@ -72,9 +72,13 @@ def increment_path(path, exist_ok=False):
         path (str or pathlib.Path): f"{model_dir}/{args.name}".
         exist_ok (bool): whether increment path (increment if False).
     """
+    ## path create
     path = Path(path)
+
+    ## if path not exist, it's ok
     if (path.exists() and exist_ok) or (not path.exists()):
         return str(path)
+    ## else if path is not None, add +1 num and makes new_foler
     else:
         dirs = glob.glob(f"{path}*")
         matches = [re.search(rf"%s(\d+)" % path.stem, d) for d in dirs]
@@ -242,14 +246,15 @@ if __name__ == '__main__':
     parser.add_argument('--val_ratio', type=float, default=0.2, help='ratio for validaton (default: 0.2)')
     parser.add_argument('--lr_decay_step', type=int, default=20, help='learning rate scheduler deacy step (default: 20)')
     parser.add_argument('--log_interval', type=int, default=20, help='how many batches to wait before logging training status')
-    parser.add_argument('--name', default='exp', help='model save at {SM_MODEL_DIR}/{name}')
-
-    # Container environment
-    parser.add_argument('--data_dir', type=str, default=os.environ.get('SM_CHANNEL_TRAIN', '/opt/ml/input/data/train/images'))
-    parser.add_argument('--model_dir', type=str, default=os.environ.get('SM_MODEL_DIR', './model'))
-
+    ## folder_name is made by args.name
+    parser.add_argument('--name', default='test', help='model save at {SM_MODEL_DIR}/{name}')
+    # Container environment/
+    parser.add_argument('--data_dir', type=str, default=os.environ.get('SM_CHANNEL_TRAIN', './T4064/dataset/train/images'))
+    parser.add_argument('--model_dir', type=str, default=os.environ.get('SM_MODEL_DIR', './T4064/checkpoints'))
     args = parser.parse_args()
-    print(args)
+
+    for arg in vars(args):
+        print(arg, getattr(args, arg))
 
     data_dir = args.data_dir
     model_dir = args.model_dir
