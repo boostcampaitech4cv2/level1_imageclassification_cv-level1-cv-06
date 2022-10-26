@@ -5,18 +5,26 @@ import multiprocessing
 import os
 import random
 import re
+import pandas as pd
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
+import albumentations as A
+import timm
+
+from albumentations import *
+from albumentations.pytorch import ToTensorV2
+
+from sklearn.model_selection import train_test_split
 from torch.optim import SGD
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from dataset import MaskBaseDataset, BaseAugmentation
+from dataset import CustomTrainDataset, CustomTestDataset
 from model import BaseModel
 
 
@@ -88,6 +96,15 @@ def increment_path(path, exist_ok=False):
 
 
 def train(data_dir, model_dir, args):
+    ##### Make New dataset
+    # read_csv
+    # split data
+    # make transforms
+    # make dataset (ex) train, valid
+    #     dataset input : img_info, label_col, transforms
+    #     dataset output : img, label
+    # make data loader
+    #####
     seed_everything(args.seed)
 
     save_dir = increment_path(os.path.join(model_dir, args.name))
@@ -95,26 +112,51 @@ def train(data_dir, model_dir, args):
     # -- settings
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
+    
+    ## -- read_csv
+    img_info = pd.read_csv('./T4064/dataset/train/custom_train.csv')
+    
+    ## -- split data
+    train_paths, valid_paths, train_labels, valid_labels = train_test_split(img_info['path'],
+                                                                            img_info[args.label_col],
+                                                                            train_size = 0.7,
+                                                                            shuffle = True,
+                                                                            random_state = args.seed,
+                                                                            stratify=img_info[args.stratify])
+
+    ## -- transforms
+    train_transforms = A.Compose([A.Resize(height=224, width=224),
+                                  A.HorizontalFlip(p=0.5),
+                                  A.RandomBrightnessContrast(p=0.5),
+                                  A.GaussianBlur(p=0.5),
+                                  A.GridDistortion(p=0.5),
+                                  A.Rotate(limit=30, p=0.5),
+                                  A.Normalize(mean=(0.56019358,0.52410121,0.501457),
+                                              std=(0.23318603,0.24300033,0.24567522)),
+                                  ToTensorV2()])
+
+    valid_transforms = A.Compose([A.Resize(height=224, width=224),
+                                  A.Normalize(mean=(0.56019358,0.52410121,0.501457),
+                                  std=(0.23318603,0.24300033,0.24567522)),
+                                  ToTensorV2()])
 
     # -- dataset
-    dataset = MaskBaseDataset(
-        data_dir=data_dir,
-    )
-    num_classes = dataset.num_classes  # 18
+    ## if label_col is 'gender' or 'mask' automatically one-hot-encode
+    train_dataset = CustomTrainDataset(img_paths=train_paths,
+                                       labels=train_labels,
+                                       label_col=args.label_col,
+                                       transforms=train_transforms)
 
-    # -- augmentation
-    transform = BaseAugmentation(
-        resize=args.resize,
-        mean=dataset.mean,
-        std=dataset.std,
-    )
-    dataset.set_transform(transform)
+    valid_dataset = CustomTrainDataset(img_paths=valid_paths,
+                                       labels=valid_labels,
+                                       label_col=args.label_col,
+                                       transforms=valid_transforms)
 
+                        
+    
     # -- data_loader
-    train_set, val_set = dataset.split_dataset()
-
     train_loader = DataLoader(
-        train_set,
+        train_dataset,
         batch_size=args.batch_size,
         num_workers=multiprocessing.cpu_count() // 2,
         shuffle=True,
@@ -123,7 +165,7 @@ def train(data_dir, model_dir, args):
     )
 
     val_loader = DataLoader(
-        val_set,
+        valid_dataset,
         batch_size=args.valid_batch_size,
         num_workers=multiprocessing.cpu_count() // 2,
         shuffle=False,
@@ -132,9 +174,8 @@ def train(data_dir, model_dir, args):
     )
 
     # -- model
-    model = BaseModel(
-        num_classes=num_classes
-    ).to(device)
+    model = timm.create_model(model_name=args.model_name, pretrained=True, num_classes=args.n_classes)
+    model.to(device)
     model = torch.nn.DataParallel(model)
 
     # -- loss & metric
@@ -209,14 +250,14 @@ def train(data_dir, model_dir, args):
                 acc_item = (labels == preds).sum().item()
                 val_loss_items.append(loss_item)
                 val_acc_items.append(acc_item)
-
-                if figure is None:
-                    inputs_np = torch.clone(inputs).detach().cpu().permute(0, 2, 3, 1).numpy()
-                    inputs_np = MaskBaseDataset.denormalize_image(inputs_np, dataset.mean, dataset.std)
-                    figure = grid_image(inputs_np, labels, preds, n=16, shuffle=True)
+                #### study need!
+                # if figure is None:
+                #     inputs_np = torch.clone(inputs).detach().cpu().permute(0, 2, 3, 1).numpy()
+                #     inputs_np = MaskBaseDataset.denormalize_image(inputs_np, dataset.mean, dataset.std)
+                #     figure = grid_image(inputs_np, labels, preds, n=16, shuffle=True)
 
             val_loss = np.sum(val_loss_items) / len(val_loader)
-            val_acc = np.sum(val_acc_items) / len(val_set)
+            val_acc = np.sum(val_acc_items) / len(valid_dataset)
             best_val_loss = min(best_val_loss, val_loss)
             if val_acc > best_val_acc:
                 print(f"New best model for val accuracy : {val_acc:4.2%}! saving the best model..")
@@ -229,7 +270,8 @@ def train(data_dir, model_dir, args):
             )
             logger.add_scalar("Val/loss", val_loss, epoch)
             logger.add_scalar("Val/accuracy", val_acc, epoch)
-            logger.add_figure("results", figure, epoch)
+            #### study need!
+            # logger.add_figure("results", figure, epoch)
             print()
 
 
@@ -237,20 +279,23 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     # Data and model checkpoints directories
+    ## folder_name is made by args.name
+    parser.add_argument('--name', default='good_night', help='model save at {SM_MODEL_DIR}/{name}')
+    parser.add_argument('--model_name', type=str, default='efficientnet_b3_pruned')
+    parser.add_argument('--n_classes', type=int, default=18, help='number_of_class')
     parser.add_argument('--seed', type=int, default=42, help='random seed (default: 42)')
-    parser.add_argument('--epochs', type=int, default=1, help='number of epochs to train (default: 1)')
-    parser.add_argument("--resize", nargs="+", type=list, default=[128, 96], help='resize size for image when training')
+    parser.add_argument('--epochs', type=int, default=100, help='number of epochs to train (default: 1)')
     parser.add_argument('--batch_size', type=int, default=64, help='input batch size for training (default: 64)')
     parser.add_argument('--valid_batch_size', type=int, default=1000, help='input batch size for validing (default: 1000)')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate (default: 1e-3)')
-    parser.add_argument('--val_ratio', type=float, default=0.2, help='ratio for validaton (default: 0.2)')
+    parser.add_argument('--val_ratio', type=float, default=0.3, help='ratio for validaton (default: 0.2)')
     parser.add_argument('--lr_decay_step', type=int, default=20, help='learning rate scheduler deacy step (default: 20)')
     parser.add_argument('--log_interval', type=int, default=20, help='how many batches to wait before logging training status')
-    ## folder_name is made by args.name
-    parser.add_argument('--name', default='test', help='model save at {SM_MODEL_DIR}/{name}')
-    # Container environment/
     parser.add_argument('--data_dir', type=str, default=os.environ.get('SM_CHANNEL_TRAIN', './T4064/dataset/train/images'))
     parser.add_argument('--model_dir', type=str, default=os.environ.get('SM_MODEL_DIR', './T4064/checkpoints'))
+    parser.add_argument('--label_col', type=str, default='class')
+    parser.add_argument('--stratify', type=str, default='class')
+
     args = parser.parse_args()
 
     for arg in vars(args):
