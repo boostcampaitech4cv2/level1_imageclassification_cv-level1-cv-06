@@ -7,6 +7,10 @@ from PIL import Image
 from torch.utils.data import Dataset, Subset, random_split
 from torchvision.transforms import Resize, ToTensor, Normalize, Compose
 
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+
+
 IMG_EXTENSIONS = [
     ".jpg", ".JPG", ".jpeg", ".JPEG", ".png",
     ".PNG", ".ppm", ".PPM", ".bmp", ".BMP",
@@ -17,6 +21,7 @@ def is_image_file(filename):
     return any(filename.endswith(extension) for extension in IMG_EXTENSIONS)
 
 
+# -- Augmentation
 class BaseAugmentation:
     def __init__(self, resize, mean, std, **args):
         self.transform = Compose([
@@ -28,6 +33,25 @@ class BaseAugmentation:
     def __call__(self, image):
         return self.transform(image)
 
+# -- (1024) add CustomAugmentation class
+class CustomAugmentation:
+    def __init__(self, **args):
+        self.transform = A.Compose([
+            A.Resize(p=1, height=224, width=224),
+            # A.CenterCrop(p=1, height=224, width=224),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(p=0.5),
+            A.GaussianBlur(p=0.5),
+            A.GridDistortion(p=0.5),
+            A.Rotate(limit=30, p=0.5),
+            A.Normalize(mean=(0.548, 0.504, 0.479), 
+                        std=(0.237, 0.247, 0.246)),
+            ToTensorV2()
+            ])
+    
+    def __call__(self, image):
+        transformed = self.transform(image=image)
+        return transformed['image']
 
 class MaskLabels(int, Enum):
     MASK = 0
@@ -70,6 +94,7 @@ class AgeLabels(int, Enum):
             return cls.OLD
 
 
+# -- Dataset
 class MaskBaseDataset(Dataset):
     num_classes = 3 * 2 * 3
 
@@ -88,7 +113,8 @@ class MaskBaseDataset(Dataset):
     gender_labels = []
     age_labels = []
 
-    def __init__(self, data_dir, mean=(0.548, 0.504, 0.479), std=(0.237, 0.247, 0.246), val_ratio=0.2):
+    # -- (1026) update val_ratio 0.3
+    def __init__(self, data_dir, mean=(0.548, 0.504, 0.479), std=(0.237, 0.247, 0.246), val_ratio=0.3):
         self.data_dir = data_dir
         self.mean = mean
         self.std = std
@@ -163,9 +189,10 @@ class MaskBaseDataset(Dataset):
     def get_age_label(self, index) -> AgeLabels:
         return self.age_labels[index]
 
+    # -- (1026) load numpy array image
     def read_image(self, index):
         image_path = self.image_paths[index]
-        return Image.open(image_path)
+        return np.array(Image.open(image_path))
 
     @staticmethod
     def encode_multi_class(mask_label, gender_label, age_label) -> int:
@@ -203,18 +230,26 @@ class MaskBaseDataset(Dataset):
 class TestDataset(Dataset):
     def __init__(self, img_paths, resize, mean=(0.548, 0.504, 0.479), std=(0.237, 0.247, 0.246)):
         self.img_paths = img_paths
-        self.transform = Compose([
-            Resize(resize, Image.BILINEAR),
-            ToTensor(),
-            Normalize(mean=mean, std=std),
-        ])
+        # self.transform = Compose([
+        #     Resize(resize, Image.BILINEAR),
+        #     ToTensor(),
+        #     Normalize(mean=mean, std=std),
+        # ])
+        # -- (1026) update transform using albumentation
+        self.transform = A.Compose([
+            A.Resize(height=224, width=224),
+            A.Normalize(mean=(0.548, 0.504, 0.479), 
+                        std=(0.237, 0.247, 0.246)),
+            ToTensorV2()
+            ])
 
+    # -- (1026) load numpy array image
     def __getitem__(self, index):
-        image = Image.open(self.img_paths[index])
+        image = np.array(Image.open(self.img_paths[index]))
 
         if self.transform:
-            image = self.transform(image)
-        return image
+            image = self.transform(image=image)
+        return image['image']
 
     def __len__(self):
         return len(self.img_paths)

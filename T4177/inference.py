@@ -9,12 +9,16 @@ from torch.utils.data import DataLoader
 
 from dataset import TestDataset, MaskBaseDataset
 
+import timm
 
+
+# -- (1026) load model using timm
 def load_model(saved_model, num_classes, device):
-    model_cls = getattr(import_module("model"), args.model)
-    model = model_cls(
-        num_classes=num_classes
-    )
+    # model_cls = getattr(import_module("model"), args.model)
+    # model = model_cls(
+    #     num_classes=num_classes
+    # )
+    model = timm.create_model(model_name=args.model, pretrained=False, num_classes=num_classes).to(device)
 
     # tarpath = os.path.join(saved_model, 'best.tar.gz')
     # tar = tarfile.open(tarpath, 'r:gz')
@@ -62,7 +66,8 @@ def inference(data_dir, model_dir, output_dir, args):
             preds.extend(pred.cpu().numpy())
 
     info['ans'] = preds
-    save_path = os.path.join(output_dir, f'output.csv')
+    # -- (1026) update output file name
+    save_path = os.path.join(output_dir, f'{model_dir[9:]}.csv')
     info.to_csv(save_path, index=False)
     print(f"Inference Done! Inference result saved at {save_path}")
 
@@ -72,8 +77,8 @@ if __name__ == '__main__':
 
     # Data and model checkpoints directories
     parser.add_argument('--batch_size', type=int, default=1000, help='input batch size for validing (default: 1000)')
-    parser.add_argument('--resize', type=tuple, default=(96, 128), help='resize size for image when you trained (default: (96, 128))')
-    parser.add_argument('--model', type=str, default='BaseModel', help='model type (default: BaseModel)')
+    parser.add_argument('--resize', type=tuple, default=(224, 224), help='resize size for image when you trained (default: (96, 128))')
+    parser.add_argument('--model', type=str, default='resnet34', help='model type (default: BaseModel)')
 
     # Container environment
     parser.add_argument('--data_dir', type=str, default=os.environ.get('SM_CHANNEL_EVAL', '/opt/ml/input/data/eval'))
@@ -83,7 +88,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     data_dir = args.data_dir
-    model_dir = args.model_dir
+    model_dir = './model/' + args.model_dir
     output_dir = args.output_dir
 
     os.makedirs(output_dir, exist_ok=True)

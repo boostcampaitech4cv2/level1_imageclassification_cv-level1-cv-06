@@ -16,10 +16,14 @@ from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from dataset import MaskBaseDataset, BaseAugmentation
+from dataset import MaskBaseDataset, BaseAugmentation, CustomAugmentation
 from model import BaseModel
+from datetime import datetime
+from pytz import timezone
 
+import timm
 
+# -- set seed
 def seed_everything(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
@@ -30,6 +34,7 @@ def seed_everything(seed):
     random.seed(seed)
 
 
+# -- get lr from parameter
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
         return param_group['lr']
@@ -99,11 +104,13 @@ def train(data_dir, model_dir, args):
     num_classes = dataset.num_classes  # 18
 
     # -- augmentation
-    transform = BaseAugmentation(
-        resize=args.resize,
-        mean=dataset.mean,
-        std=dataset.std,
-    )
+    # transform = BaseAugmentation(
+    #     resize=args.resize,
+    #     mean=dataset.mean,
+    #     std=dataset.std,
+    # )
+    # -- (1026) add augmentation using albumentation
+    transform = CustomAugmentation()
     dataset.set_transform(transform)
 
     # -- data_loader
@@ -128,19 +135,22 @@ def train(data_dir, model_dir, args):
     )
 
     # -- model
-    model = BaseModel(
-        num_classes=num_classes
-    ).to(device)
+    # model = BaseModel(
+    #     num_classes=num_classes
+    # ).to(device)
+    # -- (1026) define model using timm
+    model = timm.create_model(model_name='resnet34', pretrained=True, num_classes=num_classes).to(device)
     model = torch.nn.DataParallel(model)
 
     # -- loss & metric
     criterion = nn.CrossEntropyLoss()
-    optimizer = SGD(
+    # -- (1026) update optimizer
+    optimizer = torch.optim.Adam(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=args.lr,
-        weight_decay=5e-4
+        weight_decay=1e-4
     )
-    scheduler = StepLR(optimizer, args.lr_decay_step, gamma=0.5)
+    # scheduler = StepLR(optimizer, args.lr_decay_step, gamma=0.5)
 
     # -- logging
     logger = SummaryWriter(log_dir=save_dir)
@@ -150,6 +160,7 @@ def train(data_dir, model_dir, args):
     best_val_acc = 0
     best_val_loss = np.inf
     for epoch in range(args.epochs):
+
         # train loop
         model.train()
         loss_value = 0
@@ -183,8 +194,7 @@ def train(data_dir, model_dir, args):
 
                 loss_value = 0
                 matches = 0
-
-        scheduler.step()
+        # scheduler.step()
 
         # val loop
         with torch.no_grad():
@@ -232,17 +242,22 @@ def train(data_dir, model_dir, args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
+    # -- (1026) add time for save model
+    now = datetime.now(timezone('Asia/Seoul'))
+    name = now.strftime('%m%d_%H%M')
+
     # Data and model checkpoints directories
+    # -- (1026) update default argument
     parser.add_argument('--seed', type=int, default=42, help='random seed (default: 42)')
-    parser.add_argument('--epochs', type=int, default=1, help='number of epochs to train (default: 1)')
-    parser.add_argument("--resize", nargs="+", type=list, default=[128, 96], help='resize size for image when training')
-    parser.add_argument('--batch_size', type=int, default=64, help='input batch size for training (default: 64)')
+    parser.add_argument('--epochs', type=int, default=25, help='number of epochs to train (default: 1)')
+    parser.add_argument("--resize", nargs="+", type=list, default=[224, 224], help='resize size for image when training')
+    parser.add_argument('--batch_size', type=int, default=32, help='input batch size for training (default: 64)')
     parser.add_argument('--valid_batch_size', type=int, default=1000, help='input batch size for validing (default: 1000)')
-    parser.add_argument('--lr', type=float, default=1e-3, help='learning rate (default: 1e-3)')
-    parser.add_argument('--val_ratio', type=float, default=0.2, help='ratio for validaton (default: 0.2)')
-    parser.add_argument('--lr_decay_step', type=int, default=20, help='learning rate scheduler deacy step (default: 20)')
-    parser.add_argument('--log_interval', type=int, default=20, help='how many batches to wait before logging training status')
-    parser.add_argument('--name', default='exp', help='model save at {SM_MODEL_DIR}/{name}')
+    parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-3)')
+    parser.add_argument('--val_ratio', type=float, default=0.3, help='ratio for validaton (default: 0.2)')
+    parser.add_argument('--lr_decay_step', type=int, default=0, help='learning rate scheduler deacy step (default: 20)')
+    parser.add_argument('--log_interval', type=int, default=100, help='how many batches to wait before logging training status')
+    parser.add_argument('--name', default=name, help='model save at {SM_MODEL_DIR}/{name}')
 
     # Container environment
     parser.add_argument('--data_dir', type=str, default=os.environ.get('SM_CHANNEL_TRAIN', '/opt/ml/input/data/train/images'))
