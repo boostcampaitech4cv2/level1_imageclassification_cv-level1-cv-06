@@ -184,9 +184,9 @@ def train(data_dir, model_dir, args):
     optimizer = AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=args.lr,
-        weight_decay=5e-4
+        # weight_decay=5e-4
     )
-    scheduler = StepLR(optimizer, args.lr_decay_step, gamma=0.5)
+    # scheduler = StepLR(optimizer, args.lr_decay_step, gamma=0.5)
 
     # -- logging
     logger = SummaryWriter(log_dir=save_dir)
@@ -227,7 +227,7 @@ def train(data_dir, model_dir, args):
                 current_lr = get_lr(optimizer)
                 print(
                     f"Epoch[{epoch}/{args.epochs}]({idx + 1}/{len(train_loader)}) || "
-                    f"training loss {train_loss:4.4} || training accuracy {train_acc:4.2%} || lr {current_lr}"
+                    f"training loss {train_loss:2.4f} || training accuracy {train_acc:4.2%} || lr {current_lr}"
                 )
                 logger.add_scalar("Train/loss", train_loss, epoch * len(train_loader) + idx)
                 logger.add_scalar("Train/accuracy", train_acc, epoch * len(train_loader) + idx)
@@ -235,7 +235,7 @@ def train(data_dir, model_dir, args):
                 loss_value = 0
                 matches = 0
 
-        scheduler.step()
+        # scheduler.step()
 
         # val loop
         with torch.no_grad():
@@ -271,7 +271,7 @@ def train(data_dir, model_dir, args):
             best_val_loss = min(best_val_loss, val_loss)
 
             if val_f1 > best_val_f1:
-                print(f"New best model for val f1 : {val_f1:2.4}! saving the best model..")
+                print(f"New best model for val f1 : {val_f1:2.4f}! saving the best model..")
                 torch.save(model.module.state_dict(), f"{save_dir}/best.pth")
                 best_val_f1 = val_f1
 
@@ -280,8 +280,8 @@ def train(data_dir, model_dir, args):
             
             torch.save(model.module.state_dict(), f"{save_dir}/last.pth")
             print(
-                f"[Val] f1 : {val_f1:2.4}, loss: {val_loss:4.2}, acc: {val_acc:4.2} || "
-                f"best acc : {best_val_f1:2.4}, best loss: {best_val_loss:4.2}, best acc: {best_val_acc:4.2}"
+                f"[Val] f1 : {val_f1:2.4f}, loss: {val_loss:2.4f}, acc: {val_acc:4.2%} || "
+                f"best f1 : {best_val_f1:2.4f}, best loss: {best_val_loss:2.4f}, best acc: {best_val_acc:4.2%}"
             )
             logger.add_scalar("Val/loss", val_loss, epoch)
             logger.add_scalar("Val/accuracy", val_acc, epoch)
@@ -302,7 +302,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=50, help='number of epochs to train (default: 1)')
     parser.add_argument('--batch_size', type=int, default=64, help='input batch size for training (default: 64)')
     parser.add_argument('--valid_batch_size', type=int, default=1000, help='input batch size for validing (default: 1000)')
-    parser.add_argument('--lr', type=float, default=1e-3, help='learning rate (default: 1e-3)')
+    parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
     parser.add_argument('--val_ratio', type=float, default=0.3, help='ratio for validaton (default: 0.2)')
     parser.add_argument('--lr_decay_step', type=int, default=20, help='learning rate scheduler deacy step (default: 20)')
     parser.add_argument('--log_interval', type=int, default=20, help='how many batches to wait before logging training status')
