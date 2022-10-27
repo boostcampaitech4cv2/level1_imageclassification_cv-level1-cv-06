@@ -14,11 +14,9 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
 def load_model(saved_model, num_classes, device):
-    # model_cls = getattr(import_module("model"), args.model)
-    # model = model_cls(num_classes=num_classes)
+    model_cls = getattr(import_module("model"), args.model)
+    model = model_cls(num_classes=num_classes)
     
-    model = timm.create_model('resnet34', pretrained=False, num_classes=18).to(device)
-
     # tarpath = os.path.join(saved_model, 'best.tar.gz')
     # tar = tarfile.open(tarpath, 'r:gz')
     # tar.extractall(path=saved_model)
@@ -82,9 +80,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     # Data and model checkpoints directories
-    parser.add_argument('--batch_size', type=int, default=1000, help='input batch size for validing (default: 1000)')
+    parser.add_argument('--batch_size', type=int, default=64, help='input batch size for validing (default: 64)')
     # parser.add_argument('--resize', type=tuple, default=(96, 128), help='resize size for image when you trained (default: (96, 128))')
-    # parser.add_argument('--model', type=str, default='BaseModel', help='model type (default: BaseModel)')
+    parser.add_argument('--model', type=str, default='ResNet34', help='model type (default: ResNet34)')
 
     # Container environment
     parser.add_argument('--data_dir', type=str, default=os.environ.get('SM_CHANNEL_EVAL', '/opt/ml/input/data/eval'))

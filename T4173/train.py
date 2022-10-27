@@ -25,7 +25,12 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
 from sklearn.metrics import f1_score
+from importlib import import_module
+from loss import create_criterion
+import gc
 
+gc.collect()
+torch.cuda.empty_cache()
 
 def seed_everything(seed):
     torch.manual_seed(seed)
@@ -93,7 +98,7 @@ def increment_path(path, exist_ok=False):
 def train(data_dir, model_dir, args):
     seed_everything(args.seed)
 
-    save_dir = increment_path(os.path.join(model_dir, args.name))
+    save_dir = increment_path(os.path.join(model_dir, args.model))
 
     # -- settings
     use_cuda = torch.cuda.is_available()
@@ -123,7 +128,7 @@ def train(data_dir, model_dir, args):
     train_set, val_set = dataset.split_dataset()
     
     # cutmix
-    train_set = CutMix(train_set, num_class=18, beta=1.0, prob=0.5, num_mix=2)
+    # train_set = CutMix(train_set, num_class=18, beta=1.0, prob=0.5, num_mix=2)
 
     train_loader = DataLoader(
         train_set,
@@ -136,7 +141,7 @@ def train(data_dir, model_dir, args):
 
     val_loader = DataLoader(
         val_set,
-        batch_size=args.valid_batch_size,
+        batch_size=args.batch_size,
         num_workers=multiprocessing.cpu_count() // 2,
         shuffle=False,
         pin_memory=use_cuda,
@@ -144,15 +149,23 @@ def train(data_dir, model_dir, args):
     )
 
     # -- model
-    model = timm.create_model('resnet34', pretrained=True, num_classes=18).to(device)
+    model_module = getattr(import_module("model"), args.model)  # default: ResNet34
+    model = model_module(
+        num_classes=num_classes
+    ).to(device)
     model = torch.nn.DataParallel(model)
 
     # -- loss & metric
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    criterion = create_criterion(args.criterion)  # default: cross_entropy
+    opt_module = getattr(import_module("torch.optim"), args.optimizer)  # default: Adam
+    optimizer = opt_module(
+        filter(lambda p: p.requires_grad, model.parameters()),
+        lr=args.lr,
+        weight_decay=5e-4
+    )
     scheduler = StepLR(optimizer, args.lr_decay_step, gamma=0.5)
     
-    criterion_cutmix = CutMixCrossEntropyLoss(True).to(device)
+    # criterion_cutmix = CutMixCrossEntropyLoss(True).to(device)
 
     # -- logging
     logger = SummaryWriter(log_dir=save_dir)
@@ -175,7 +188,7 @@ def train(data_dir, model_dir, args):
 
             outs = model(inputs)
             preds = torch.argmax(outs, dim=-1)
-            loss = criterion_cutmix(outs, labels) #cutmix
+            loss = criterion(outs, labels) #cutmix : criterion_cutmix
 
             loss.backward()
             optimizer.step()
@@ -231,10 +244,11 @@ def train(data_dir, model_dir, args):
             torch.save(model.module.state_dict(), f"{save_dir}/last.pth")
             print(
                 f"[Val] acc : {val_acc:4.2%}, F1-Score : {f1:4.2%}, loss: {val_loss:4.2} || "
-                f"best acc : {best_f1:4.2%}, best loss: {best_val_loss:4.2}"
+                f"best F1-Score : {best_f1:4.2%}, best loss: {best_val_loss:4.2}"
             )
             logger.add_scalar("Val/loss", val_loss, epoch)
             logger.add_scalar("Val/accuracy", val_acc, epoch)
+            logger.add_scalar("Val/f1-score", f1, epoch)
             logger.add_figure("results", figure, epoch)
             print()
 
@@ -246,13 +260,14 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=42, help='random seed (default: 42)')
     parser.add_argument('--epochs', type=int, default=1, help='number of epochs to train (default: 1)')
     parser.add_argument('--batch_size', type=int, default=64, help='input batch size for training (default: 64)')
-    parser.add_argument('--valid_batch_size', type=int, default=1000, help='input batch size for validing (default: 1000)')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate (default: 1e-3)')
     parser.add_argument('--val_ratio', type=float, default=0.3, help='ratio for validaton (default: 0.3)')
     parser.add_argument('--lr_decay_step', type=int, default=20, help='learning rate scheduler deacy step (default: 20)')
+    parser.add_argument('--model', type=str, default='ResNet34', help='model type (default: ResNet34)')
+    parser.add_argument('--optimizer', type=str, default='Adam', help='optimizer type (default: Adam)')
+    parser.add_argument('--criterion', type=str, default='cross_entropy', help='criterion type (default: cross_entropy)')
     parser.add_argument('--log_interval', type=int, default=20, help='how many batches to wait before logging training status')
     parser.add_argument('--name', default='exp', help='model save at {SM_MODEL_DIR}/{name}')
-
     # Container environment
     parser.add_argument('--data_dir', type=str, default=os.environ.get('SM_CHANNEL_TRAIN', '/opt/ml/input/data/train/images'))
     parser.add_argument('--model_dir', type=str, default=os.environ.get('SM_MODEL_DIR', './model'))
