@@ -5,7 +5,6 @@ import pandas as pd
 import torch
 import timm
 import albumentations as A
-# import model
 
 
 from albumentations import *
@@ -83,7 +82,7 @@ if __name__ == '__main__':
     parser.add_argument('--resize', type=tuple, default=(96, 128), help='resize size for image when you trained (default: (96, 128))')
     parser.add_argument('--model_name', type=str, default='efficientnet_b3_pruned')
     parser.add_argument('--n_classes', type=int, default=18, help='number_of_class')
-    parser.add_argument('--checkpoint_name', type=str, default='good_night')
+    parser.add_argument('--checkpoint_name', type=str, default='efficientnet_b3_pruned')
     # Container environment
     parser.add_argument('--data_dir', type=str, default=os.environ.get('SM_CHANNEL_EVAL', './T4064/dataset/eval'))
     parser.add_argument('--model_dir', type=str, default=os.environ.get('SM_CHANNEL_MODEL', './T4064/checkpoints'))
@@ -96,7 +95,7 @@ if __name__ == '__main__':
     checkpoint_name = args.checkpoint_name
 
     for arg in vars(args):
-        print(arg, getattr(args, arg))
+        print(arg, "====>",getattr(args, arg))
 
     os.makedirs(output_dir, exist_ok=True)
     # inference(data_dir, model_dir, checkpoint_name, output_dir, args):

@@ -19,7 +19,8 @@ from albumentations import *
 from albumentations.pytorch import ToTensorV2
 
 from sklearn.model_selection import train_test_split
-from torch.optim import SGD
+from sklearn.metrics import f1_score
+from torch.optim import *
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -180,7 +181,7 @@ def train(data_dir, model_dir, args):
 
     # -- loss & metric
     criterion = nn.CrossEntropyLoss()
-    optimizer = SGD(
+    optimizer = AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=args.lr,
         weight_decay=5e-4
@@ -193,12 +194,17 @@ def train(data_dir, model_dir, args):
         json.dump(vars(args), f, ensure_ascii=False, indent=4)
 
     best_val_acc = 0
+    best_val_f1 = 0
     best_val_loss = np.inf
     for epoch in range(args.epochs):
         # train loop
         model.train()
         loss_value = 0
         matches = 0
+
+        epoch_preds = []
+        epoch_labels = []
+
         for idx, train_batch in enumerate(train_loader):
             inputs, labels = train_batch
             inputs = inputs.to(device)
@@ -250,6 +256,9 @@ def train(data_dir, model_dir, args):
                 acc_item = (labels == preds).sum().item()
                 val_loss_items.append(loss_item)
                 val_acc_items.append(acc_item)
+
+                epoch_preds += preds.detach().cpu().numpy().tolist()
+                epoch_labels += labels.detach().cpu().numpy().tolist()
                 #### study need!
                 # if figure is None:
                 #     inputs_np = torch.clone(inputs).detach().cpu().permute(0, 2, 3, 1).numpy()
@@ -258,15 +267,21 @@ def train(data_dir, model_dir, args):
 
             val_loss = np.sum(val_loss_items) / len(val_loader)
             val_acc = np.sum(val_acc_items) / len(valid_dataset)
+            val_f1 = f1_score(epoch_labels, epoch_preds, average='macro')
             best_val_loss = min(best_val_loss, val_loss)
-            if val_acc > best_val_acc:
-                print(f"New best model for val accuracy : {val_acc:4.2%}! saving the best model..")
+
+            if val_f1 > best_val_f1:
+                print(f"New best model for val f1 : {val_f1:2.4}! saving the best model..")
                 torch.save(model.module.state_dict(), f"{save_dir}/best.pth")
+                best_val_f1 = val_f1
+
+            if val_acc > best_val_acc:
                 best_val_acc = val_acc
+            
             torch.save(model.module.state_dict(), f"{save_dir}/last.pth")
             print(
-                f"[Val] acc : {val_acc:4.2%}, loss: {val_loss:4.2} || "
-                f"best acc : {best_val_acc:4.2%}, best loss: {best_val_loss:4.2}"
+                f"[Val] f1 : {val_f1:2.4}, loss: {val_loss:4.2}, acc: {val_acc:4.2} || "
+                f"best acc : {best_val_f1:2.4}, best loss: {best_val_loss:4.2}, best acc: {best_val_acc:4.2}"
             )
             logger.add_scalar("Val/loss", val_loss, epoch)
             logger.add_scalar("Val/accuracy", val_acc, epoch)
@@ -280,11 +295,11 @@ if __name__ == '__main__':
 
     # Data and model checkpoints directories
     ## folder_name is made by args.name
-    parser.add_argument('--checkpoint_name', default='good_night', help='model save at {SM_MODEL_DIR}/{checkpoint_name}')
+    parser.add_argument('--checkpoint_name', default='efficientnet_b3_pruned', help='model save at {SM_MODEL_DIR}/{checkpoint_name}')
     parser.add_argument('--model_name', type=str, default='efficientnet_b3_pruned')
     parser.add_argument('--n_classes', type=int, default=18, help='number_of_class')
     parser.add_argument('--seed', type=int, default=42, help='random seed (default: 42)')
-    parser.add_argument('--epochs', type=int, default=100, help='number of epochs to train (default: 1)')
+    parser.add_argument('--epochs', type=int, default=50, help='number of epochs to train (default: 1)')
     parser.add_argument('--batch_size', type=int, default=64, help='input batch size for training (default: 64)')
     parser.add_argument('--valid_batch_size', type=int, default=1000, help='input batch size for validing (default: 1000)')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate (default: 1e-3)')
@@ -300,7 +315,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     for arg in vars(args):
-        print(arg, getattr(args, arg))
+        print(arg, "====>",getattr(args, arg))
 
     data_dir = args.data_dir
     model_dir = args.model_dir
