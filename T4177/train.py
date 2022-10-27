@@ -23,6 +23,10 @@ from pytz import timezone
 
 import timm
 
+from sklearn.metrics import f1_score
+
+from loss import create_criterion
+
 # -- set seed
 def seed_everything(seed):
     torch.manual_seed(seed)
@@ -139,13 +143,15 @@ def train(data_dir, model_dir, args):
     #     num_classes=num_classes
     # ).to(device)
     # -- (1026) define model using timm
-    model = timm.create_model(model_name='resnet34', pretrained=True, num_classes=num_classes).to(device)
+    model = timm.create_model(model_name='efficientnet_b3', pretrained=True, num_classes=num_classes).to(device)
     model = torch.nn.DataParallel(model)
 
     # -- loss & metric
-    criterion = nn.CrossEntropyLoss()
+    # -- (1027) update loss
+    criterion = create_criterion(args.criterion)  # default: cross_entropy
+    # criterion = nn.CrossEntropyLoss()
     # -- (1026) update optimizer
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=args.lr,
         weight_decay=1e-4
@@ -157,8 +163,10 @@ def train(data_dir, model_dir, args):
     with open(os.path.join(save_dir, 'config.json'), 'w', encoding='utf-8') as f:
         json.dump(vars(args), f, ensure_ascii=False, indent=4)
 
-    best_val_acc = 0
+    # -- (1027) add f1 score
+    best_val_acc = np.inf
     best_val_loss = np.inf
+    best_val_f1 = 0
     for epoch in range(args.epochs):
 
         # train loop
@@ -196,6 +204,7 @@ def train(data_dir, model_dir, args):
                 matches = 0
         # scheduler.step()
 
+        # -- (1027) add f1 score
         # val loop
         with torch.no_grad():
             print("Calculating validation results...")
@@ -203,6 +212,10 @@ def train(data_dir, model_dir, args):
             val_loss_items = []
             val_acc_items = []
             figure = None
+
+            epoch_preds = []
+            epoch_labels = []
+
             for val_batch in val_loader:
                 inputs, labels = val_batch
                 inputs = inputs.to(device)
@@ -216,6 +229,9 @@ def train(data_dir, model_dir, args):
                 val_loss_items.append(loss_item)
                 val_acc_items.append(acc_item)
 
+                epoch_preds += preds.detach().cpu().numpy().tolist()
+                epoch_labels += labels.detach().cpu().numpy().tolist()
+
                 if figure is None:
                     inputs_np = torch.clone(inputs).detach().cpu().permute(0, 2, 3, 1).numpy()
                     inputs_np = MaskBaseDataset.denormalize_image(inputs_np, dataset.mean, dataset.std)
@@ -223,16 +239,33 @@ def train(data_dir, model_dir, args):
 
             val_loss = np.sum(val_loss_items) / len(val_loader)
             val_acc = np.sum(val_acc_items) / len(val_set)
-            best_val_loss = min(best_val_loss, val_loss)
-            if val_acc > best_val_acc:
-                print(f"New best model for val accuracy : {val_acc:4.2%}! saving the best model..")
-                torch.save(model.module.state_dict(), f"{save_dir}/best.pth")
-                best_val_acc = val_acc
+            # best_val_loss = min(best_val_loss, val_loss)
+            val_f1 = f1_score(epoch_labels, epoch_preds, average='macro')
+            # best_val_f1 = min(best_val_f1, val_f1)
+
+            # if val_acc > best_val_acc:
+            #     print(f"New best model for val accuracy : {val_acc:4.2%}! saving the best model..")
+            #     torch.save(model.module.state_dict(), f"{save_dir}/best.pth")
+            #     best_val_acc = val_acc
+            # torch.save(model.module.state_dict(), f"{save_dir}/last.pth")
+            # print(
+            #     f"[Val] acc : {val_acc:4.2%}, loss: {val_loss:4.2} || "
+            #     f"best acc : {best_val_acc:4.2%}, best loss: {best_val_loss:4.2}"
+            # )
+
+            # -- (1027) save model and print score
             torch.save(model.module.state_dict(), f"{save_dir}/last.pth")
-            print(
-                f"[Val] acc : {val_acc:4.2%}, loss: {val_loss:4.2} || "
-                f"best acc : {best_val_acc:4.2%}, best loss: {best_val_loss:4.2}"
-            )
+            print(f">> [Val] loss: {val_loss:4.2}, acc : {val_acc:4.2%}, f1 score: {val_f1:4.2%}")
+
+            # -- (1027) define best model
+            if val_f1 > best_val_f1:
+                print(f"New best model for val f1 score : {val_f1:4.2%}! saving the best model..")
+                torch.save(model.module.state_dict(), f"{save_dir}/best.pth")
+                best_val_f1 = val_f1
+                best_val_acc = val_acc
+                best_val_loss = val_loss
+                print(f">> [Best model] loss: {best_val_loss:4.2}, acc : {best_val_acc:4.2%}, f1 score: {best_val_f1:4.2%}")
+            
             logger.add_scalar("Val/loss", val_loss, epoch)
             logger.add_scalar("Val/accuracy", val_acc, epoch)
             logger.add_figure("results", figure, epoch)
@@ -247,7 +280,7 @@ if __name__ == '__main__':
     name = now.strftime('%m%d_%H%M')
 
     # Data and model checkpoints directories
-    # -- (1026) update default argument
+    # -- (1027) update default argument
     parser.add_argument('--seed', type=int, default=42, help='random seed (default: 42)')
     parser.add_argument('--epochs', type=int, default=25, help='number of epochs to train (default: 1)')
     parser.add_argument("--resize", nargs="+", type=list, default=[224, 224], help='resize size for image when training')
@@ -258,6 +291,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr_decay_step', type=int, default=0, help='learning rate scheduler deacy step (default: 20)')
     parser.add_argument('--log_interval', type=int, default=100, help='how many batches to wait before logging training status')
     parser.add_argument('--name', default=name, help='model save at {SM_MODEL_DIR}/{name}')
+    parser.add_argument('--criterion', type=str, default='f1', help='criterion type (default: cross_entropy)')
 
     # Container environment
     parser.add_argument('--data_dir', type=str, default=os.environ.get('SM_CHANNEL_TRAIN', '/opt/ml/input/data/train/images'))
