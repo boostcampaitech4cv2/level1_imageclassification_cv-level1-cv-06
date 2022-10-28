@@ -2,6 +2,11 @@
 T4064/dataset
 T4064/checkpoints
 
+## T4109 ignore
+T4109/model/
+T4109/checkpoints
+T4109/z______studies/
+
 ### JupyterNotebooks ###
 
 .ipynb_checkpoints

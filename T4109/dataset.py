@@ -8,13 +8,15 @@ import numpy as np
 import torch
 from PIL import Image
 from torch.utils.data import Dataset, Subset, random_split
-from torchvision.transforms import Resize, ToTensor, Normalize, Compose, CenterCrop, ColorJitter
+from torchvision.transforms import RandomRotation, Grayscale, Resize, ToTensor, Normalize, Compose, CenterCrop, ColorJitter
+
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 
 IMG_EXTENSIONS = [
     ".jpg", ".JPG", ".jpeg", ".JPEG", ".png",
     ".PNG", ".ppm", ".PPM", ".bmp", ".BMP",
 ]
-
 
 def is_image_file(filename):
     return any(filename.endswith(extension) for extension in IMG_EXTENSIONS)
@@ -30,6 +32,39 @@ class BaseAugmentation:
 
     def __call__(self, image):
         return self.transform(image)
+    
+    
+# albumentation
+class MyAugmentation:
+    def __init__(self, resize, mean, std, **args):
+        self.transform = A.Compose([
+            A.Resize(height=resize[0], width=resize[1], interpolation=Image.BILINEAR),
+            A.HorizontalFlip(p=1.0),
+            A.RandomBrightnessContrast(p=1.0),
+            A.GaussianBlur(p=1.0),
+            A.GridDistortion(p=1.0),
+            A.Rotate(limit=30, p=1.0),
+            A.Normalize(mean=(0.56019358,0.52410121,0.501457),
+                        std=(0.23318603,0.24300033,0.24567522), p=1.0),
+            ToTensorV2(p=1.0),
+        ], p=1.0)
+
+    def __call__(self, image):
+        return self.transform(image=np.array(image))['image']
+
+## torchvision
+# class MyAugmentation:
+#     def __init__(self, resize, mean, std, **args):
+#         self.transform = Compose([
+#             Resize(resize, Image.BILINEAR),
+#             RandomRotation(50),
+#             Grayscale(3),
+#             ToTensor(),
+#             Normalize(mean=mean, std=std)
+#         ])
+    
+#     def __call__(self, image):
+#         return self.transform(image)
 
 
 class AddGaussianNoise(object):
@@ -311,3 +346,4 @@ class TestDataset(Dataset):
 
     def __len__(self):
         return len(self.img_paths)
+
