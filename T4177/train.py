@@ -156,7 +156,9 @@ def train(data_dir, model_dir, args):
         lr=args.lr,
         weight_decay=1e-4
     )
+    # -- (1028) update schedular
     # scheduler = StepLR(optimizer, args.lr_decay_step, gamma=0.5)
+    scheduler = ReduceLROnPlateau(optimizer, 'min')
 
     # -- logging
     logger = SummaryWriter(log_dir=save_dir)
@@ -203,6 +205,7 @@ def train(data_dir, model_dir, args):
                 loss_value = 0
                 matches = 0
         # scheduler.step()
+        
 
         # -- (1027) add f1 score
         # val loop
