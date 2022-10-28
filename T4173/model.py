@@ -41,11 +41,21 @@ class resnet152_bitm(nn.Module):
         x = self.model(x)
         return x
     
-class efficientnet_b8(nn.Module):
+class efficientnet_b3(nn.Module):
     def __init__(self, num_classes):
         super().__init__()
         
-        self.model = timm.create_model('tf_efficientnet_b8', pretrained=True, num_classes=num_classes)
+        self.model = timm.create_model('efficientnet_b3', pretrained=True, num_classes=num_classes)
+        
+    def forward(self, x):
+        x = self.model(x)
+        return x
+    
+class efficientnet_b4(nn.Module):
+    def __init__(self, num_classes):
+        super().__init__()
+        
+        self.model = timm.create_model('efficientnet_b4', pretrained=True, num_classes=num_classes)
         
     def forward(self, x):
         x = self.model(x)
@@ -71,28 +81,19 @@ class vit_large_224(nn.Module):
         x = self.model(x)
         return x
     
-class vit_base_224_in21k(nn.Module):
+class swin_base_224(nn.Module):
     def __init__(self, num_classes):
         super().__init__()
-        self.model = timm.create_model('vit_base_patch16_224_in21k', pretrained=True, num_classes=num_classes)
-    
-    def forward(self, x):
-        x = self.model(x)
-        return x
-    
-class swin_large_224(nn.Module):
-    def __init__(self, num_classes):
-        super().__init__()
-        self.model = timm.create_model('swin_large_patch4_window7_224', pretrained=True, num_classes=num_classes)
+        self.model = timm.create_model('swin_base_patch4_window7_224', pretrained=True, num_classes=num_classes)
     
     def forward(self, x):
         x = self.model(x)
         return x
 
-class swin_large_384(nn.Module):
+class swin_base_384(nn.Module):
     def __init__(self, num_classes):
         super().__init__()
-        self.model = timm.create_model('swin_large_patch4_window12_384', pretrained=True, num_classes=num_classes)
+        self.model = timm.create_model('swin_base_patch4_window12_384', pretrained=True, num_classes=num_classes)
     
     def forward(self, x):
         x = self.model(x)
