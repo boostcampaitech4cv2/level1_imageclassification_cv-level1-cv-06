@@ -1,6 +1,7 @@
 ## T4064 ignore
 T4064/dataset
 T4064/checkpoints
+T4064/trash_code
 
 ## T4109 ignore
 T4109/model/
