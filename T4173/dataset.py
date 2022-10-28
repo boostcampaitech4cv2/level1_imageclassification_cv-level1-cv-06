@@ -93,8 +93,6 @@ class MaskBaseDataset(Dataset):
         self.setup()
         self.calc_statistics()
         
-        self.multi_class_label = None
-
     def setup(self):
         profiles = os.listdir(self.data_dir)
         for profile in profiles:
@@ -145,8 +143,6 @@ class MaskBaseDataset(Dataset):
         age_label = self.get_age_label(index)
         multi_class_label = self.encode_multi_class(mask_label, gender_label, age_label)
         
-        self.multi_class_label = multi_class_label
-        
         image_transform = self.transform(image = image)["image"]
         return image_transform, multi_class_label
 
@@ -190,7 +186,7 @@ class MaskBaseDataset(Dataset):
         # n_val = int(len(self) * self.val_ratio)
         # n_train = len(self) - n_val
         # train_set, val_set = random_split(self, [n_train, n_val])
-        train_set, val_set = train_test_split(self, test_size = self.val_ratio, shuffle = True, stratify= self.multi_class_label)
+        train_set, val_set = train_test_split(self, test_size = self.val_ratio, shuffle = True)
         
         return train_set, val_set
 

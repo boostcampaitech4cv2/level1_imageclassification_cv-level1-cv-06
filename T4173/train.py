@@ -12,7 +12,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
@@ -98,7 +98,7 @@ def increment_path(path, exist_ok=False):
 def train(data_dir, model_dir, args):
     seed_everything(args.seed)
 
-    save_dir = increment_path(os.path.join(model_dir, args.model))
+    save_dir = increment_path(os.path.join(model_dir, args.model, args.criterion))  # 실험하는 하이퍼파라미터들로 채우기
 
     # -- settings
     use_cuda = torch.cuda.is_available()
@@ -157,14 +157,17 @@ def train(data_dir, model_dir, args):
 
     # -- loss & metric
     criterion = create_criterion(args.criterion)  # default: cross_entropy
-    opt_module = getattr(import_module("torch.optim"), args.optimizer)  # default: Adam
+    opt_module = getattr(import_module("torch.optim"), args.optimizer)  # default: AdamW
     optimizer = opt_module(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=args.lr,
         weight_decay=5e-4
     )
-    scheduler = StepLR(optimizer, args.lr_decay_step, gamma=0.5)
-    
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.3, patience=5, verbose=1) # StepLR(optimizer, args.lr_decay_step, gamma=0.5)
+    # early_stopping : 8번의 epoch 연속으로 loss 미개선 시에 조기 종료
+    patience = 8
+    triggertimes = 0
+
     # criterion_cutmix = CutMixCrossEntropyLoss(True).to(device)
 
     # -- logging
@@ -205,8 +208,6 @@ def train(data_dir, model_dir, args):
                 logger.add_scalar("Train/loss", train_loss, epoch * len(train_loader) + idx)
 
                 loss_value = 0
-
-        scheduler.step()
 
         # val loop
         with torch.no_grad():
@@ -250,6 +251,21 @@ def train(data_dir, model_dir, args):
             logger.add_scalar("Val/accuracy", val_acc, epoch)
             logger.add_scalar("Val/f1-score", f1, epoch)
             logger.add_figure("results", figure, epoch)
+
+            # Early stopping
+            if val_loss > best_val_loss:
+                trigger_times += 1
+                print('Trigger Times:', trigger_times)
+
+                if trigger_times >= patience:
+                    print('Early stopping!\nStart to test process.')
+                    return model
+            else:
+                print('trigger times: 0')
+                trigger_times = 0
+            
+            scheduler.step(val_loss)
+            
             print()
 
 
@@ -260,11 +276,11 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=42, help='random seed (default: 42)')
     parser.add_argument('--epochs', type=int, default=1, help='number of epochs to train (default: 1)')
     parser.add_argument('--batch_size', type=int, default=64, help='input batch size for training (default: 64)')
-    parser.add_argument('--lr', type=float, default=1e-3, help='learning rate (default: 1e-3)')
+    parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
     parser.add_argument('--val_ratio', type=float, default=0.3, help='ratio for validaton (default: 0.3)')
     parser.add_argument('--lr_decay_step', type=int, default=20, help='learning rate scheduler deacy step (default: 20)')
     parser.add_argument('--model', type=str, default='ResNet34', help='model type (default: ResNet34)')
-    parser.add_argument('--optimizer', type=str, default='Adam', help='optimizer type (default: Adam)')
+    parser.add_argument('--optimizer', type=str, default='AdamW', help='optimizer type (default: AdamW)')
     parser.add_argument('--criterion', type=str, default='cross_entropy', help='criterion type (default: cross_entropy)')
     parser.add_argument('--log_interval', type=int, default=20, help='how many batches to wait before logging training status')
     parser.add_argument('--name', default='exp', help='model save at {SM_MODEL_DIR}/{name}')

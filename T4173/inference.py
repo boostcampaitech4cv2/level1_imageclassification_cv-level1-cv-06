@@ -22,7 +22,9 @@ def load_model(saved_model, num_classes, device):
     # tar.extractall(path=saved_model)
 
     model_path = os.path.join(saved_model, 'best.pth')
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    # model.load_state_dict(torch.load(model_path, map_location=device))
+    saved_checkpoint = torch.load(model_path)
+    model.load_state_dict(saved_checkpoint, strict = False)
 
     return model
 
