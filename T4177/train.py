@@ -12,7 +12,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.optim import SGD
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
@@ -26,6 +26,8 @@ import timm
 from sklearn.metrics import f1_score
 
 from loss import create_criterion
+
+import wandb
 
 # -- set seed
 def seed_everything(seed):
@@ -92,7 +94,7 @@ def increment_path(path, exist_ok=False):
         return f"{path}{n}"
 
 
-def train(data_dir, model_dir, args):
+def train(data_dir, model_dir, name, args):
     seed_everything(args.seed)
 
     save_dir = increment_path(os.path.join(model_dir, args.name))
@@ -165,6 +167,11 @@ def train(data_dir, model_dir, args):
     with open(os.path.join(save_dir, 'config.json'), 'w', encoding='utf-8') as f:
         json.dump(vars(args), f, ensure_ascii=False, indent=4)
 
+    # -- (1028) add wandb
+    wandb.init(project='mask_classification', entity='i-hyejin')
+    wandb.run.name = name
+    wandb.watch(model, criterion, log='all', log_freq=10)
+
     # -- (1027) add f1 score
     best_val_acc = np.inf
     best_val_loss = np.inf
@@ -195,12 +202,16 @@ def train(data_dir, model_dir, args):
                 train_loss = loss_value / args.log_interval
                 train_acc = matches / args.batch_size / args.log_interval
                 current_lr = get_lr(optimizer)
+                wandb.log({'Epoch': epoch, 'learning_rate': current_lr})    # learing_rate
                 print(
                     f"Epoch[{epoch}/{args.epochs}]({idx + 1}/{len(train_loader)}) || "
                     f"training loss {train_loss:4.4} || training accuracy {train_acc:4.2%} || lr {current_lr}"
                 )
                 logger.add_scalar("Train/loss", train_loss, epoch * len(train_loader) + idx)
                 logger.add_scalar("Train/accuracy", train_acc, epoch * len(train_loader) + idx)
+
+                wandb.log({'Epoch': epoch, 'train_loss': train_loss})   # train_loss
+                wandb.log({'Epoch': epoch, 'train_acc': train_acc})     # train_acc
 
                 loss_value = 0
                 matches = 0
@@ -272,6 +283,12 @@ def train(data_dir, model_dir, args):
             logger.add_scalar("Val/loss", val_loss, epoch)
             logger.add_scalar("Val/accuracy", val_acc, epoch)
             logger.add_figure("results", figure, epoch)
+
+            wandb.log({'Epoch': epoch, 'valid_loss': val_loss})     # valid_loss
+            wandb.log({'Epoch': epoch, 'valid_acc': val_acc})       # valid_acc
+            wandb.log({'Epoch': epoch, 'valid_f1': val_f1})         # valid_f1
+            wandb.log({'Epoch': epoch, 'results': figure})
+
             print()
 
 
@@ -306,4 +323,4 @@ if __name__ == '__main__':
     data_dir = args.data_dir
     model_dir = args.model_dir
 
-    train(data_dir, model_dir, args)
+    train(data_dir, model_dir, name, args)
