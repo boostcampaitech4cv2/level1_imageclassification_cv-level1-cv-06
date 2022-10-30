@@ -11,7 +11,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
@@ -87,18 +87,19 @@ def train(data_dir, model_dir, args):
 
     save_dir = increment_path(os.path.join(model_dir, args.name))
 
-    # -- settings
+    ## -- settings
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
 
-    # -- dataset
+    ## -- dataset
     dataset_module = getattr(import_module("dataset"), args.dataset)  # default: MaskBaseDataset
     dataset = dataset_module(
         data_dir=data_dir,
     )
     num_classes = dataset.num_classes  # 18
 
-    # -- augmentation
+    ## -- augmentation
+    # transform_module = dataset.BaseAugmentation
     transform_module = getattr(import_module("dataset"), args.augmentation)  # default: BaseAugmentation
     transform = transform_module(
         resize=args.resize,
@@ -107,7 +108,7 @@ def train(data_dir, model_dir, args):
     )
     dataset.set_transform(transform)
 
-    # -- data_loader
+    ## -- data_loader
     train_set, val_set = dataset.split_dataset()
 
     train_loader = DataLoader(
@@ -128,24 +129,33 @@ def train(data_dir, model_dir, args):
         drop_last=True,
     )
 
-    # -- model
+    ## -- model
     model_module = getattr(import_module("model"), args.model)  # default: BaseModel
     model = model_module(
         num_classes=num_classes
     ).to(device)
-    model = torch.nn.DataParallel(model)
+    model = torch.nn.DataParallel(model) 
 
-    # -- loss & metric
+    ## -- loss & metric
+    # criterion = nn.CrossEntropyLoss(**kwargs)
     criterion = create_criterion(args.criterion)  # default: cross_entropy
+    # opt_module = torch.optim.SGD
     opt_module = getattr(import_module("torch.optim"), args.optimizer)  # default: SGD
+    # optimizer = SGD(model.parameters(), lr=lr, weight_decay=5e-4)
     optimizer = opt_module(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=args.lr,
         weight_decay=5e-4
     )
-    scheduler = StepLR(optimizer, args.lr_decay_step, gamma=0.5)
 
-    # -- logging
+
+    ## -- scheduler
+    # scheduler = StepLR(optimizer, step_size=args.lr_decay_step, gamma=0.5)
+    # scheduler = CosineAnnealingLR(optimizer, T_max=10, eta_min=0)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min')
+    
+    
+    ## -- logging
     logger = SummaryWriter(log_dir=save_dir)
     with open(os.path.join(save_dir, 'config.json'), 'w', encoding='utf-8') as f:
         json.dump(vars(args), f, ensure_ascii=False, indent=4)
@@ -157,6 +167,7 @@ def train(data_dir, model_dir, args):
         model.train()
         loss_value = 0
         matches = 0
+
         for idx, train_batch in enumerate(train_loader):
             inputs, labels = train_batch
             inputs = inputs.to(device)
@@ -250,7 +261,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate (default: 1e-3)')
     parser.add_argument('--val_ratio', type=float, default=0.2, help='ratio for validaton (default: 0.2)')
     parser.add_argument('--criterion', type=str, default='cross_entropy', help='criterion type (default: cross_entropy)')
-    parser.add_argument('--lr_decay_step', type=int, default=20, help='learning rate scheduler deacy step (default: 20)')
+    parser.add_argument('--lr_decay_step', type=int, default=20, help='learning rate scheduler decay step (default: 20)')
     parser.add_argument('--log_interval', type=int, default=20, help='how many batches to wait before logging training status')
     parser.add_argument('--name', default='exp', help='model save at {SM_MODEL_DIR}/{name}')
 
@@ -265,3 +276,25 @@ if __name__ == '__main__':
     model_dir = args.model_dir
 
     train(data_dir, model_dir, args)
+
+
+
+
+
+# import argparse
+
+# # create the parser
+# parser = argparse.ArgumentParser()
+
+# # add an argument
+# # parser.add_argument('--name', type=str, required=True, )
+# parser.add_argument('--age', type=int, nargs='+')
+
+# # parse the argument
+# args = parser.parse_args()
+
+# print(f'hello {args.age}')
+# print(args)
+
+
+# python train.py --model MyResnet34 --epochs 50 --augmentation MyAugmentation --criterion focal --name 'model:resnet34, epoch:50, loss:focal, scheduler:reduceplateau'

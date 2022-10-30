@@ -26,6 +26,7 @@ class BaseAugmentation:
     def __init__(self, resize, mean, std, **args):
         self.transform = Compose([
             Resize(resize, Image.BILINEAR),
+            # Resize([224, 224], Image.BILINEAR),
             ToTensor(),
             Normalize(mean=mean, std=std),
         ])
@@ -34,16 +35,16 @@ class BaseAugmentation:
         return self.transform(image)
     
     
-# albumentation
-class MyAugmentation:
+# albumentations
+class working:
     def __init__(self, resize, mean, std, **args):
         self.transform = A.Compose([
             A.Resize(height=resize[0], width=resize[1], interpolation=Image.BILINEAR),
-            A.HorizontalFlip(p=1.0),
-            A.RandomBrightnessContrast(p=1.0),
-            A.GaussianBlur(p=1.0),
-            A.GridDistortion(p=1.0),
-            A.Rotate(limit=30, p=1.0),
+            # A.HorizontalFlip(p=1.0),
+            # A.RandomBrightnessContrast(p=1.0),
+            # A.GaussianBlur(p=1.0),
+            # A.GridDistortion(p=1.0),
+            # A.Rotate(limit=30, p=1.0),
             A.Normalize(mean=(0.56019358,0.52410121,0.501457),
                         std=(0.23318603,0.24300033,0.24567522), p=1.0),
             ToTensorV2(p=1.0),
@@ -52,6 +53,25 @@ class MyAugmentation:
     def __call__(self, image):
         return self.transform(image=np.array(image))['image']
 
+
+class MyAugmentation:
+    def __init__(self, resize, mean, std, **args):
+        self.transform = A.Compose([
+            A.Resize(height=resize[0], width=resize[1], interpolation=Image.BILINEAR),
+            # A.HorizontalFlip(p=1.0),
+            # A.RandomBrightnessContrast(p=1.0),
+            # A.GaussianBlur(p=1.0),
+            # A.GridDistortion(p=1.0),
+            # A.Rotate(limit=30, p=1.0),
+            A.Normalize(mean=(0.56019358,0.52410121,0.501457),
+                        std=(0.23318603,0.24300033,0.24567522), p=1.0),
+            ToTensorV2(p=1.0),
+        ], p=1.0)
+
+    def __call__(self, image):
+        return self.transform(image=np.array(image))['image']
+    
+    
 ## torchvision
 # class MyAugmentation:
 #     def __init__(self, resize, mean, std, **args):
