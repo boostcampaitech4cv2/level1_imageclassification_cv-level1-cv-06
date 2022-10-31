@@ -79,7 +79,6 @@ def grid_image(np_images, gts, preds, n=16, shuffle=False):
 
 def increment_path(path, exist_ok=False):
     """ Automatically increment path, i.e. runs/exp --> runs/exp0, runs/exp1 etc.
-
     Args:
         path (str or pathlib.Path): f"{model_dir}/{args.name}".
         exist_ok (bool): whether increment path (increment if False).
@@ -114,10 +113,9 @@ def train(data_dir, model_dir, args):
     transform = A.Compose([
         A.Resize(height=224, width=224),
         A.HorizontalFlip(p=0.5),
-        A.RandomBrightnessContrast(p=0.5),
-        A.GaussianBlur(p=0.5),
-        A.GridDistortion(p=0.5),
-        A.Rotate(limit=30, p=0.5),
+        A.GaussianBlur(p=0.2),
+        A.GridDistortion(p=0.2),
+        A.Rotate(limit=15, p=0.2),
         A.Normalize(mean=(0.56, 0.524, 0.501), std=(0.233, 0.243, 0.246)),
         ToTensorV2(),
     ])
@@ -128,7 +126,7 @@ def train(data_dir, model_dir, args):
     train_set, val_set = dataset.split_dataset()
     
     # cutmix
-    # train_set = CutMix(train_set, num_class=18, beta=1.0, prob=0.5, num_mix=2)
+    train_set = CutMix(train_set, num_class=18, beta=1.0, prob=0.3, num_mix=2)
 
     train_loader = DataLoader(
         train_set,
@@ -165,10 +163,10 @@ def train(data_dir, model_dir, args):
     )
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.3, patience=5, verbose=1) # StepLR(optimizer, args.lr_decay_step, gamma=0.5)
     # early_stopping : 8번의 epoch 연속으로 loss 미개선 시에 조기 종료
-    patience = 8
+    patience = 12
     triggertimes = 0
 
-    # criterion_cutmix = CutMixCrossEntropyLoss(True).to(device)
+    criterion_cutmix = CutMixCrossEntropyLoss(True).to(device)
 
     # -- logging
     logger = SummaryWriter(log_dir=save_dir)
@@ -191,7 +189,7 @@ def train(data_dir, model_dir, args):
 
             outs = model(inputs)
             preds = torch.argmax(outs, dim=-1)
-            loss = criterion(outs, labels) #cutmix : criterion_cutmix
+            loss = criterion_cutmix(outs, labels) #cutmix : criterion_cutmix
 
             loss.backward()
             optimizer.step()
@@ -237,11 +235,13 @@ def train(data_dir, model_dir, args):
             val_loss = np.sum(val_loss_items) / len(val_loader)
             val_acc = np.sum(val_acc_items) / len(val_set)
             f1 = f1_score(y_true=labels.cpu().numpy(), y_pred=preds.cpu().numpy(), average="macro")
-            best_val_loss = min(best_val_loss, val_loss)
+            
             if f1 > best_f1:
                 print(f"New best model for F1-Score : {f1:4.2%}! saving the best model..")
                 torch.save(model.module.state_dict(), f"{save_dir}/best.pth")
                 best_f1 = f1
+            
+            best_val_loss = min(best_val_loss, val_loss)
             torch.save(model.module.state_dict(), f"{save_dir}/last.pth")
             print(
                 f"[Val] acc : {val_acc:4.2%}, F1-Score : {f1:4.2%}, loss: {val_loss:4.2} || "

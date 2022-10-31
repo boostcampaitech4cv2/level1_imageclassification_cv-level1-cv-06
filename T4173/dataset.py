@@ -7,12 +7,14 @@ from typing import Tuple, List
 import numpy as np
 from PIL import Image
 from torch.utils.data import Dataset, Subset, random_split
-from torchvision.transforms import Resize, ToTensor, Normalize, Compose
+from torchvision.transforms import Resize, ToTensor, Normalize, Compose, CenterCrop, ToTensor
 import albumentations as A
-from albumentations.pytorch import ToTensorV2
 
 from sklearn.model_selection import train_test_split
+from retinaface.pre_trained_models import get_model as get_detector
 
+face_detector = get_detector("resnet50_2020-07-20", max_size=512)
+face_detector.eval()
 
 IMG_EXTENSIONS = [
     ".jpg", ".JPG", ".jpeg", ".JPEG", ".png",
@@ -138,12 +140,23 @@ class MaskBaseDataset(Dataset):
         assert self.transform is not None, ".set_tranform 메소드를 이용하여 transform 을 주입해주세요"
 
         image = self.read_image(index)
+        # Face detect
+        annotations = face_detector.predict_jsons(image)
+        try:
+            x_min, y_min, x_max, y_max = annotations[0]["bbox"]
+            x_min = np.clip(x_min, 0, x_max)
+            y_min = np.clip(y_min, 0, y_max)
+            image = image[int(y_min):int(y_max), int(x_min):int(x_max)]
+        except:
+            image = Image.open(self.image_paths[index])
+            image = CenterCrop(300)(image)
+        
         mask_label = self.get_mask_label(index)
         gender_label = self.get_gender_label(index)
         age_label = self.get_age_label(index)
         multi_class_label = self.encode_multi_class(mask_label, gender_label, age_label)
         
-        image_transform = self.transform(image = image)["image"]
+        image_transform = self.transform(image = np.array(image))["image"]
         return image_transform, multi_class_label
 
     def __len__(self):
@@ -189,8 +202,7 @@ class MaskBaseDataset(Dataset):
         train_set, val_set = train_test_split(self, test_size = self.val_ratio, shuffle = True)
         
         return train_set, val_set
-
-
+    
 class TestDataset(Dataset):
     def __init__(self, img_paths):
         self.img_paths = img_paths
@@ -201,9 +213,19 @@ class TestDataset(Dataset):
         
     def __getitem__(self, index):
         image = np.array(Image.open(self.img_paths[index]))
+        # Face detect
+        annotations = face_detector.predict_jsons(image)
+        try:
+            x_min, y_min, x_max, y_max = annotations[0]["bbox"]
+            x_min = np.clip(x_min, 0, x_max)
+            y_min = np.clip(y_min, 0, y_max)
+            image = image[int(y_min):int(y_max), int(x_min):int(x_max)]
+        except:
+            image = Image.open(self.img_paths[index])
+            image = CenterCrop(300)(image)
 
         if self.transform:
-            image = self.transform(image = image)["image"]
+            image = self.transform(image = np.array(image))["image"]
         return image
 
     def __len__(self):
