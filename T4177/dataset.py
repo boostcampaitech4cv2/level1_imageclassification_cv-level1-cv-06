@@ -38,12 +38,13 @@ class CustomAugmentation:
     def __init__(self, **args):
         self.transform = A.Compose([
             A.Resize(p=1, height=224, width=224),
+            A.CLAHE(p=0.5),
             # A.CenterCrop(p=1, height=224, width=224),
-            A.HorizontalFlip(p=0.5),
-            A.RandomBrightnessContrast(p=0.5),
-            A.GaussianBlur(p=0.5),
-            A.GridDistortion(p=0.5),
-            A.Rotate(limit=30, p=0.5),
+            # A.HorizontalFlip(p=0.5),
+            # A.RandomBrightnessContrast(p=0.5),
+            # A.GaussianBlur(p=0.5),
+            # A.GridDistortion(p=0.5),
+            # A.Rotate(limit=30, p=0.5),
             A.Normalize(mean=(0.548, 0.504, 0.479), 
                         std=(0.237, 0.247, 0.246)),
             ToTensorV2()
