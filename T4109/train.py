@@ -7,6 +7,7 @@ import random
 import re
 from importlib import import_module
 from pathlib import Path
+from stat import ST_GID
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -92,7 +93,9 @@ def train(data_dir, model_dir, args):
     device = torch.device("cuda" if use_cuda else "cpu")
 
     ## -- dataset
+    # dataset_module = dataset.MaskBaseDataset
     dataset_module = getattr(import_module("dataset"), args.dataset)  # default: MaskBaseDataset
+    # 
     dataset = dataset_module(
         data_dir=data_dir,
     )
@@ -117,7 +120,7 @@ def train(data_dir, model_dir, args):
         num_workers=multiprocessing.cpu_count() // 2,
         shuffle=True,
         pin_memory=use_cuda,
-        drop_last=True,
+        drop_last=False,
     )
 
     val_loader = DataLoader(
@@ -126,7 +129,7 @@ def train(data_dir, model_dir, args):
         num_workers=multiprocessing.cpu_count() // 2,
         shuffle=False,
         pin_memory=use_cuda,
-        drop_last=True,
+        drop_last=False,
     )
 
     ## -- model
@@ -150,10 +153,14 @@ def train(data_dir, model_dir, args):
 
 
     ## -- scheduler
-    # scheduler = StepLR(optimizer, step_size=args.lr_decay_step, gamma=0.5)
-    # scheduler = CosineAnnealingLR(optimizer, T_max=10, eta_min=0)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min')
-    
+    if args.scheduler == 'StepLR':
+        scheduler = StepLR(optimizer, step_size=args.lr_decay_step, gamma=0.5)
+    elif args.scheduler == 'CosineAnnealingLR':
+        scheduler = CosineAnnealingLR(optimizer, T_max=10, eta_min=0)
+    elif args.scheduler == 'ReduceLROnPlateau':
+        scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10)
+    else:
+         raise ValueError   
     
     ## -- logging
     logger = SummaryWriter(log_dir=save_dir)
@@ -198,7 +205,8 @@ def train(data_dir, model_dir, args):
                 loss_value = 0
                 matches = 0
 
-        scheduler.step()
+        # scheduler.step()      # -->> for stepLR
+        
 
         # val loop
         with torch.no_grad():
@@ -226,10 +234,14 @@ def train(data_dir, model_dir, args):
                     figure = grid_image(
                         inputs_np, labels, preds, n=16, shuffle=args.dataset != "MaskSplitByProfileDataset"
                     )
+                    
 
             val_loss = np.sum(val_loss_items) / len(val_loader)
             val_acc = np.sum(val_acc_items) / len(val_set)
             best_val_loss = min(best_val_loss, val_loss)
+            
+            scheduler.step(val_loss)
+            
             if val_acc > best_val_acc:
                 print(f"New best model for val accuracy : {val_acc:4.2%}! saving the best model..")
                 torch.save(model.module.state_dict(), f"{save_dir}/best.pth")
@@ -250,20 +262,22 @@ if __name__ == '__main__':
 
     # Data and model checkpoints directories
     parser.add_argument('--seed', type=int, default=42, help='random seed (default: 42)')
-    parser.add_argument('--epochs', type=int, default=2, help='number of epochs to train (default: 1')
+    parser.add_argument('--epochs', type=int, default=50, help='number of epochs to train (default: 1')
     parser.add_argument('--dataset', type=str, default='MaskBaseDataset', help='dataset augmentation type (default: MaskBaseDataset)')
     parser.add_argument('--augmentation', type=str, default='BaseAugmentation', help='data augmentation type (default: BaseAugmentation)')
     parser.add_argument("--resize", nargs="+", type=list, default=[128, 96], help='resize size for image when training')
     parser.add_argument('--batch_size', type=int, default=64, help='input batch size for training (default: 64)')
     parser.add_argument('--valid_batch_size', type=int, default=1000, help='input batch size for validing (default: 1000)')
     parser.add_argument('--model', type=str, default='BaseModel', help='model type (default: BaseModel)')
-    parser.add_argument('--optimizer', type=str, default='SGD', help='optimizer type (default: SGD)')
+    parser.add_argument('--optimizer', type=str, default='AdamW', help='optimizer type (default: SGD)')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate (default: 1e-3)')
     parser.add_argument('--val_ratio', type=float, default=0.2, help='ratio for validaton (default: 0.2)')
-    parser.add_argument('--criterion', type=str, default='cross_entropy', help='criterion type (default: cross_entropy)')
+    parser.add_argument('--criterion', type=str, default='focal', help='criterion type (default: cross_entropy)')
     parser.add_argument('--lr_decay_step', type=int, default=20, help='learning rate scheduler decay step (default: 20)')
     parser.add_argument('--log_interval', type=int, default=20, help='how many batches to wait before logging training status')
     parser.add_argument('--name', default='exp', help='model save at {SM_MODEL_DIR}/{name}')
+    parser.add_argument('--scheduler', type=str, default='ReduceLROnPlateau', help='scheduler: StepLR, CosineAnnealingLR, ReduceLROnPlateau...')
+
 
     # Container environment
     parser.add_argument('--data_dir', type=str, default=os.environ.get('SM_CHANNEL_TRAIN', '/opt/ml/input/data/train/images'))
@@ -297,4 +311,10 @@ if __name__ == '__main__':
 # print(args)
 
 
-# python train.py --model MyResnet34 --epochs 50 --augmentation MyAugmentation --criterion focal --name 'model:resnet34, epoch:50, loss:focal, scheduler:reduceplateau'
+# loss(criterion): focal
+# optimizer: AdamW {default: SGD}
+# scheduler: ReduceLROnPlateau(hard coded)
+
+
+
+# python train.py --model MyDensenet121  --epochs 50 --augmentation BaseAugmentation_size --criterion focal --optimizer AdamW --name 'model:MyDensenet121, epoch:50, augmentation:Soft, loss:focal, optimizer:AdamW, scheduler:reduceplateau'

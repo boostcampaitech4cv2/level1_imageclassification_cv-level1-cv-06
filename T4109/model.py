@@ -125,6 +125,58 @@ class MyResnet34(nn.Module):
 
 
 
+class MyDensenet121(nn.Module):
+    def __init__(self, num_classes):
+        super().__init__()
+
+        """
+        1. 위와 같이 생성자의 parameter 에 num_claases 를 포함해주세요.
+        2. 나만의 모델 아키텍쳐를 디자인 해봅니다.
+        3. 모델의 output_dimension 은 num_classes 로 설정해주세요.
+        """
+        
+        
+        self.model = timm.create_model('densenet121', num_classes=num_classes, pretrained=True)
+        
+
+    def forward(self, x):
+        """
+        1. 위에서 정의한 모델 아키텍쳐를 forward propagation 을 진행해주세요
+        2. 결과로 나온 output 을 return 해주세요
+        """
+        
+        out = self.model(x)
+        
+        return out
+    
+    
+    
+class MySenet34(nn.Module):
+    def __init__(self, num_classes):
+        super().__init__()
+
+        """
+        1. 위와 같이 생성자의 parameter 에 num_claases 를 포함해주세요.
+        2. 나만의 모델 아키텍쳐를 디자인 해봅니다.
+        3. 모델의 output_dimension 은 num_classes 로 설정해주세요.
+        """
+        
+        
+        self.model = timm.create_model('seresnet34', num_classes=num_classes, pretrained=True)
+        
+
+    def forward(self, x):
+        """
+        1. 위에서 정의한 모델 아키텍쳐를 forward propagation 을 진행해주세요
+        2. 결과로 나온 output 을 return 해주세요
+        """
+        
+        out = self.model(x)
+        
+        return out
+    
+    
+    
 class vit_base_patch32_224(nn.Module):
     def __init__(self, num_classes):
         super().__init__()
@@ -136,6 +188,54 @@ class vit_base_patch32_224(nn.Module):
         """
         
         self.model = timm.create_model('vit_base_patch32_224')
+
+    def forward(self, x):
+        """
+        1. 위에서 정의한 모델 아키텍쳐를 forward propagation 을 진행해주세요
+        2. 결과로 나온 output 을 return 해주세요
+        """
+        
+        out = self.model(x)
+        
+        return out
+
+
+
+class swinv2_cr_base_224(nn.Module):
+    def __init__(self, num_classes):
+        super().__init__()
+
+        """
+        1. 위와 같이 생성자의 parameter 에 num_classes 를 포함해주세요.
+        2. 나만의 모델 아키텍쳐를 디자인 해봅니다.
+        3. 모델의 output_dimension 은 num_classes 로 설정해주세요.
+        """
+        
+        self.model = timm.create_model('swinv2_cr_base_224')
+
+    def forward(self, x):
+        """
+        1. 위에서 정의한 모델 아키텍쳐를 forward propagation 을 진행해주세요
+        2. 결과로 나온 output 을 return 해주세요
+        """
+        
+        out = self.model(x)
+        
+        return out
+
+
+
+class swin_base_patch4_window7_224(nn.Module):
+    def __init__(self, num_classes):
+        super().__init__()
+
+        """
+        1. 위와 같이 생성자의 parameter 에 num_classes 를 포함해주세요.
+        2. 나만의 모델 아키텍쳐를 디자인 해봅니다.
+        3. 모델의 output_dimension 은 num_classes 로 설정해주세요.
+        """
+        
+        self.model = timm.create_model('swin_base_patch4_window7_224')
 
     def forward(self, x):
         """

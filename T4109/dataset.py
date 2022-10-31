@@ -22,7 +22,8 @@ def is_image_file(filename):
     return any(filename.endswith(extension) for extension in IMG_EXTENSIONS)
 
 
-class BaseAugmentation:
+## torchvision
+# class BaseAugmentation:
     def __init__(self, resize, mean, std, **args):
         self.transform = Compose([
             Resize(resize, Image.BILINEAR),
@@ -34,19 +35,19 @@ class BaseAugmentation:
     def __call__(self, image):
         return self.transform(image)
     
-    
+
+
 # albumentations
-class working:
+class BaseAugmentation:
     def __init__(self, resize, mean, std, **args):
         self.transform = A.Compose([
             A.Resize(height=resize[0], width=resize[1], interpolation=Image.BILINEAR),
-            # A.HorizontalFlip(p=1.0),
-            # A.RandomBrightnessContrast(p=1.0),
-            # A.GaussianBlur(p=1.0),
-            # A.GridDistortion(p=1.0),
-            # A.Rotate(limit=30, p=1.0),
-            A.Normalize(mean=(0.56019358,0.52410121,0.501457),
-                        std=(0.23318603,0.24300033,0.24567522), p=1.0),
+            A.HorizontalFlip(p=0.5),
+            A.GaussianBlur(p=0.2),
+            A.GridDistortion(p=0.2),
+            A.Rotate(limit=10, p=0.5),
+            A.Normalize(mean=(0.5602,0.5241,0.5015),
+                        std=(0.2332,0.2430,0.2457), p=1.0),
             ToTensorV2(p=1.0),
         ], p=1.0)
 
@@ -54,22 +55,23 @@ class working:
         return self.transform(image=np.array(image))['image']
 
 
-class MyAugmentation:
+
+class BaseAugmentation_size:
     def __init__(self, resize, mean, std, **args):
         self.transform = A.Compose([
-            A.Resize(height=resize[0], width=resize[1], interpolation=Image.BILINEAR),
-            # A.HorizontalFlip(p=1.0),
-            # A.RandomBrightnessContrast(p=1.0),
-            # A.GaussianBlur(p=1.0),
-            # A.GridDistortion(p=1.0),
-            # A.Rotate(limit=30, p=1.0),
-            A.Normalize(mean=(0.56019358,0.52410121,0.501457),
-                        std=(0.23318603,0.24300033,0.24567522), p=1.0),
+            A.Resize(height=224, width=224, interpolation=Image.BILINEAR),
+            A.HorizontalFlip(p=0.5),
+            A.GaussianBlur(p=0.2),
+            A.GridDistortion(p=0.2),
+            A.Rotate(limit=10, p=0.5),
+            A.Normalize(mean=(0.5602,0.5241,0.5015),
+                        std=(0.2332,0.2430,0.2457), p=1.0),
             ToTensorV2(p=1.0),
         ], p=1.0)
 
     def __call__(self, image):
         return self.transform(image=np.array(image))['image']
+
     
     
 ## torchvision
