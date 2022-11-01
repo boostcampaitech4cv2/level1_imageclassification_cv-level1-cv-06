@@ -137,7 +137,7 @@ def train(data_dir, model_dir, name, args):
         num_workers=multiprocessing.cpu_count() // 2,
         shuffle=False,
         pin_memory=use_cuda,
-        drop_last=True,
+        drop_last=False,
     )
 
     # -- model
@@ -145,7 +145,7 @@ def train(data_dir, model_dir, name, args):
     #     num_classes=num_classes
     # ).to(device)
     # -- (1026) define model using timm
-    model = timm.create_model(model_name='efficientnet_b3', pretrained=True, num_classes=num_classes).to(device)
+    model = timm.create_model(model_name=args.model, pretrained=True, num_classes=num_classes).to(device)
     model = torch.nn.DataParallel(model)
 
     # -- loss & metric
@@ -160,7 +160,7 @@ def train(data_dir, model_dir, name, args):
     )
     # -- (1028) update schedular
     # scheduler = StepLR(optimizer, args.lr_decay_step, gamma=0.5)
-    scheduler = ReduceLROnPlateau(optimizer, 'min')
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.3, patience=5, verbose=1)
 
     # -- logging
     logger = SummaryWriter(log_dir=save_dir)
@@ -215,7 +215,7 @@ def train(data_dir, model_dir, name, args):
 
                 loss_value = 0
                 matches = 0
-        # scheduler.step()
+        # scheduler.step(loss_value)
         
 
         # -- (1027) add f1 score
@@ -279,6 +279,9 @@ def train(data_dir, model_dir, name, args):
                 best_val_acc = val_acc
                 best_val_loss = val_loss
                 print(f">> [Best model] loss: {best_val_loss:4.2}, acc : {best_val_acc:4.2%}, f1 score: {best_val_f1:4.2%}")
+
+            # -- (1101) update schedular
+            scheduler.step(val_loss)
             
             logger.add_scalar("Val/loss", val_loss, epoch)
             logger.add_scalar("Val/accuracy", val_acc, epoch)
@@ -300,18 +303,19 @@ if __name__ == '__main__':
     name = now.strftime('%m%d_%H%M')
 
     # Data and model checkpoints directories
-    # -- (1027) update default argument
+    # -- (1101) update default argument
     parser.add_argument('--seed', type=int, default=42, help='random seed (default: 42)')
-    parser.add_argument('--epochs', type=int, default=25, help='number of epochs to train (default: 1)')
+    parser.add_argument('--epochs', type=int, default=50, help='number of epochs to train (default: 1)')
     parser.add_argument("--resize", nargs="+", type=list, default=[224, 224], help='resize size for image when training')
     parser.add_argument('--batch_size', type=int, default=32, help='input batch size for training (default: 64)')
     parser.add_argument('--valid_batch_size', type=int, default=1000, help='input batch size for validing (default: 1000)')
-    parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-3)')
+    parser.add_argument('--lr', type=float, default=1e-3, help='learning rate (default: 1e-3)')
     parser.add_argument('--val_ratio', type=float, default=0.3, help='ratio for validaton (default: 0.2)')
-    parser.add_argument('--lr_decay_step', type=int, default=0, help='learning rate scheduler deacy step (default: 20)')
+    parser.add_argument('--lr_decay_step', type=int, default=20, help='learning rate scheduler deacy step (default: 20)')
     parser.add_argument('--log_interval', type=int, default=100, help='how many batches to wait before logging training status')
     parser.add_argument('--name', default=name, help='model save at {SM_MODEL_DIR}/{name}')
-    parser.add_argument('--criterion', type=str, default='f1', help='criterion type (default: cross_entropy)')
+    parser.add_argument('--criterion', type=str, default='focal', help='criterion type (default: cross_entropy)')
+    parser.add_argument('--model', type=str, default='efficientnet_b4', help='model name')
 
     # Container environment
     parser.add_argument('--data_dir', type=str, default=os.environ.get('SM_CHANNEL_TRAIN', '/opt/ml/input/data/train/images'))
