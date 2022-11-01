@@ -202,8 +202,6 @@ def train(data_dir, model_dir, args):
     model = torch.nn.DataParallel(model)
 
     # -- loss & metric
-#     f1_macro = MulticlassF1Score(num_classes=18, average='macro').to(device)
-#     f1_micro = MulticlassF1Score(num_classes=18, average='micro').to(device)
     criterion = create_criterion(args.criterion)  # default: cross_entropy
     opt_module = getattr(import_module("torch.optim"), args.optimizer)  # default: AdamW
     optimizer = opt_module(
@@ -212,7 +210,7 @@ def train(data_dir, model_dir, args):
         weight_decay=5e-4
     )
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.3, patience=5, verbose=1) # StepLR(optimizer, args.lr_decay_step, gamma=0.5)
-    # early_stopping : 8번의 epoch 연속으로 loss 미개선 시에 조기 종료
+    # early_stopping : 12번의 epoch 연속으로 loss 미개선 시에 조기 종료
     patience = 12
     triggertimes = 0
 
@@ -221,8 +219,7 @@ def train(data_dir, model_dir, args):
     with open(os.path.join(save_dir, 'config.json'), 'w', encoding='utf-8') as f:
         json.dump(vars(args), f, ensure_ascii=False, indent=4)
 
-    best_f1_macro = 0
-    best_f1_micro = 0
+    best_f1 = 0
     best_val_loss = np.inf
     for epoch in range(args.epochs):
         # train loop
@@ -275,6 +272,8 @@ def train(data_dir, model_dir, args):
             model.eval()
             val_loss_items = []
             val_acc_items = []
+            val_preds = [] 
+            val_labels = []
             figure = None
             for val_batch in val_loader:
                 inputs, labels = val_batch
@@ -288,6 +287,9 @@ def train(data_dir, model_dir, args):
                 acc_item = (labels == preds).sum().item()
                 val_loss_items.append(loss_item)
                 val_acc_items.append(acc_item)
+
+                val_preds += preds.detach().cpu().numpy().tolist()
+                val_labels += labels.detach().cpu().numpy().tolist()
                 
                 if figure is None:
                     inputs_np = torch.clone(inputs).detach().cpu().permute(0, 2, 3, 1).numpy()
@@ -296,28 +298,23 @@ def train(data_dir, model_dir, args):
 
             val_loss = np.sum(val_loss_items) / len(val_loader)
             val_acc = np.sum(val_acc_items) / len(val_set)
-            macro = f1_score(y_true=labels.cpu().numpy(), y_pred=preds.cpu().numpy(), average="macro")  # f1_macro(preds, labels)
-            micro = f1_score(y_true=labels.cpu().numpy(), y_pred=preds.cpu().numpy(), average="micro")  # f1_micro(preds, labels) 
             
-            if macro >= best_f1_macro:
-                print(f"New best model for F1(macro)-Score : {macro:4.2%}! saving the best model..")
-                torch.save(model.module.state_dict(), f"{save_dir}/best_macro.pth")
-                best_f1_macro = macro
-            if micro >= best_f1_micro:
-                print(f"New best model for F1(micro)-Score : {micro:4.2%}! saving the best model..")
-                torch.save(model.module.state_dict(), f"{save_dir}/best_micro.pth")
-                best_f1_micro = micro
+            f1 = f1_score(val_labels, val_preds, average='macro')  # f1_macro(preds, labels)
+            
+            if f1 >= best_f1:
+                print(f"New best model for F1-Score : {f1:4.2%}! saving the best model..")
+                torch.save(model.module.state_dict(), f"{save_dir}/best.pth")
+                best_f1 = f1
             
             best_val_loss = min(best_val_loss, val_loss)
             torch.save(model.module.state_dict(), f"{save_dir}/last.pth")
             print(
-                f"[Val] acc : {val_acc:4.2%}, F1(macro)-Score : {macro:4.2%}, F1(micro)-Score : {micro:4.2%}, loss: {val_loss:4.2} || "
-                f"best F1(macro)-Score : {best_f1_macro:4.2%}, best F1(micro)-Score : {best_f1_micro:4.2%}, best loss: {best_val_loss:4.2}"
+                f"[Val] acc : {val_acc:4.2%}, F1-Score : {f1:4.2%}, loss: {val_loss:4.2} || "
+                f"best F1-Score : {best_f1:4.2%}, best loss: {best_val_loss:4.2}"
             )
             logger.add_scalar("Val/loss", val_loss, epoch)
             logger.add_scalar("Val/accuracy", val_acc, epoch)
-            logger.add_scalar("Val/f1(macro)-score", macro, epoch)
-            logger.add_scalar("Val/f1(micro)-score", micro, epoch)
+            logger.add_scalar("Val/f1-score", f1, epoch)
             logger.add_figure("results", figure, epoch)
 
             # Early stopping
