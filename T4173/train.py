@@ -13,7 +13,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
+import torch.utils.data as data
 from torch.utils.tensorboard import SummaryWriter
 
 from dataset import MaskBaseDataset
@@ -109,21 +110,29 @@ def train(data_dir, model_dir, args):
     )
     num_classes = dataset.num_classes  # 18
 
+    # -- data_loader
+    n_val = int(len(dataset) * 0.3)
+    n_train = len(dataset) - n_val
+    train_set, val_set = data.random_split(dataset, [n_train, n_val])
+    
     # -- augmentation
-    transform = A.Compose([
+    train_transform = A.Compose([
+        A.CLAHE(p=0.5),
         A.Resize(height=224, width=224),
         A.HorizontalFlip(p=0.5),
-        A.GaussianBlur(p=0.2),
-        A.GridDistortion(p=0.2),
-        A.Rotate(limit=15, p=0.2),
         A.Normalize(mean=(0.56, 0.524, 0.501), std=(0.233, 0.243, 0.246)),
         ToTensorV2(),
     ])
     
-    dataset.set_transform(transform)
-
-    # -- data_loader
-    train_set, val_set = dataset.split_dataset()
+    val_transform = A.Compose([
+        A.Resize(height=224, width=224),
+        A.HorizontalFlip(p=0.5),
+        A.Normalize(mean=(0.56, 0.524, 0.501), std=(0.233, 0.243, 0.246)),
+        ToTensorV2(),
+    ])
+    
+    train_set.dataset.set_transform(train_transform)
+    val_set.dataset.set_transform(val_transform)
     
     # cutmix
     train_set = CutMix(train_set, num_class=18, beta=1.0, prob=0.3, num_mix=2)
@@ -131,19 +140,19 @@ def train(data_dir, model_dir, args):
     train_loader = DataLoader(
         train_set,
         batch_size=args.batch_size,
-        num_workers=multiprocessing.cpu_count() // 2,
+        num_workers=0,
         shuffle=True,
         pin_memory=use_cuda,
-        drop_last=True,
+        drop_last=False,
     )
 
     val_loader = DataLoader(
         val_set,
         batch_size=args.batch_size,
-        num_workers=multiprocessing.cpu_count() // 2,
-        shuffle=False,
+        num_workers=0,
+        shuffle=True,
         pin_memory=use_cuda,
-        drop_last=True,
+        drop_last=False,
     )
 
     # -- model

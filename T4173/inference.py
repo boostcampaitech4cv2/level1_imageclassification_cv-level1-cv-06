@@ -12,6 +12,7 @@ import timm
 
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+import ttach as tta
 
 def load_model(saved_model, num_classes, device):
     model_cls = getattr(import_module("model"), args.model)
@@ -31,8 +32,6 @@ def load_model(saved_model, num_classes, device):
 
 @torch.no_grad()
 def inference(data_dir, model_dir, output_dir, args):
-    """
-    """
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
 
@@ -54,10 +53,17 @@ def inference(data_dir, model_dir, output_dir, args):
     ])
     dataset.set_transform(transform)
     
+    tta_transform = tta.Compose([
+        tta.HorizontalFlip()
+    ])
+    tta_model = tta.ClassificationTTAWrapper(model, tta_transform)
+    tta_model.to(device)
+    tta_model.eval()
+    
     loader = torch.utils.data.DataLoader(
         dataset,
         batch_size=args.batch_size,
-        num_workers=multiprocessing.cpu_count() // 2,
+        num_workers=0,
         shuffle=False,
         pin_memory=use_cuda,
         drop_last=False,
@@ -68,7 +74,7 @@ def inference(data_dir, model_dir, output_dir, args):
     with torch.no_grad():
         for idx, images in enumerate(loader):
             images = images.to(device)
-            pred = model(images)
+            pred = tta_model(images) # model
             pred = pred.argmax(dim=-1)
             preds.extend(pred.cpu().numpy())
 

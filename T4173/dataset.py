@@ -7,10 +7,10 @@ from typing import Tuple, List
 import numpy as np
 from PIL import Image
 from torch.utils.data import Dataset, Subset, random_split
+import torch.utils.data as data
 from torchvision.transforms import Resize, ToTensor, Normalize, Compose, CenterCrop, ToTensor
 import albumentations as A
 
-from sklearn.model_selection import train_test_split
 from retinaface.pre_trained_models import get_model as get_detector
 
 face_detector = get_detector("resnet50_2020-07-20", max_size=512)
@@ -67,7 +67,7 @@ class AgeLabels(int, Enum):
             return cls.OLD
 
 
-class MaskBaseDataset(Dataset):
+class MaskBaseDataset(data.Dataset):
     num_classes = 3 * 2 * 3
 
     _file_names = {
@@ -85,11 +85,10 @@ class MaskBaseDataset(Dataset):
     gender_labels = []
     age_labels = []
 
-    def __init__(self, data_dir, mean=(0.56, 0.524, 0.501), std=(0.233, 0.243, 0.246), val_ratio=0.3):
+    def __init__(self, data_dir, mean=(0.56, 0.524, 0.501), std=(0.233, 0.243, 0.246)):
         self.data_dir = data_dir
         self.mean = mean
         self.std = std
-        self.val_ratio = val_ratio
 
         self.transform = None
         self.setup()
@@ -137,8 +136,6 @@ class MaskBaseDataset(Dataset):
         self.transform = transform
 
     def __getitem__(self, index):
-        assert self.transform is not None, ".set_tranform 메소드를 이용하여 transform 을 주입해주세요"
-
         image = self.read_image(index)
         # Face detect
         annotations = face_detector.predict_jsons(image)
@@ -194,14 +191,6 @@ class MaskBaseDataset(Dataset):
         img_cp *= 255.0
         img_cp = np.clip(img_cp, 0, 255).astype(np.uint8)
         return img_cp
-
-    def split_dataset(self) -> Tuple[Subset, Subset]:
-        # n_val = int(len(self) * self.val_ratio)
-        # n_train = len(self) - n_val
-        # train_set, val_set = random_split(self, [n_train, n_val])
-        train_set, val_set = train_test_split(self, test_size = self.val_ratio, shuffle = True)
-        
-        return train_set, val_set
     
 class TestDataset(Dataset):
     def __init__(self, img_paths):
