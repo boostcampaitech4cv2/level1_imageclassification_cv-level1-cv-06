@@ -4,17 +4,20 @@ from collections import defaultdict
 from enum import Enum
 from typing import Tuple, List
 
+import pandas as pd
 import numpy as np
 from PIL import Image
-from torch.utils.data import Dataset, Subset, random_split
+from torch.utils.data import Dataset, Subset
 import torch.utils.data as data
 from torchvision.transforms import Resize, ToTensor, Normalize, Compose, CenterCrop, ToTensor
 import albumentations as A
 
-from retinaface.pre_trained_models import get_model as get_detector
 
-face_detector = get_detector("resnet50_2020-07-20", max_size=512)
-face_detector.eval()
+bounding_box = pd.read_csv('./../bounding_box.csv')
+bounding_box.set_index('img_paths', inplace=True)
+bounding_box_test = pd.read_csv('./../bounding_box_test.csv')
+bounding_box_test.set_index('img_paths', inplace=True)
+
 
 IMG_EXTENSIONS = [
     ".jpg", ".JPG", ".jpeg", ".JPEG", ".png",
@@ -136,18 +139,17 @@ class MaskBaseDataset(data.Dataset):
         self.transform = transform
 
     def __getitem__(self, index):
-        image = self.read_image(index)
+        image_path = self.image_paths[index]
+        image = Image.open(image_path)
+        image = np.array(image)
         # Face detect
-        annotations = face_detector.predict_jsons(image)
-        try:
-            x_min, y_min, x_max, y_max = annotations[0]["bbox"]
-            x_min = np.clip(x_min, 0, x_max)
-            y_min = np.clip(y_min, 0, y_max)
+        if sum(bounding_box.loc[image_path]):
+            x_min, y_min, x_max, y_max = bounding_box.loc[image_path]
             image = image[int(y_min):int(y_max), int(x_min):int(x_max)]
-        except:
+        else:
             image = Image.open(self.image_paths[index])
             image = CenterCrop(300)(image)
-        
+            
         mask_label = self.get_mask_label(index)
         gender_label = self.get_gender_label(index)
         age_label = self.get_age_label(index)
@@ -167,10 +169,6 @@ class MaskBaseDataset(data.Dataset):
 
     def get_age_label(self, index) -> AgeLabels:
         return self.age_labels[index]
-
-    def read_image(self, index):
-        image_path = self.image_paths[index]
-        return np.array(Image.open(image_path))
 
     @staticmethod
     def encode_multi_class(mask_label, gender_label, age_label) -> int:
@@ -201,15 +199,15 @@ class TestDataset(Dataset):
         self.transform = transform
         
     def __getitem__(self, index):
-        image = np.array(Image.open(self.img_paths[index]))
+        image_path = self.img_paths[index]
+        image = Image.open(image_path)
+        image = np.array(image)
+        
         # Face detect
-        annotations = face_detector.predict_jsons(image)
-        try:
-            x_min, y_min, x_max, y_max = annotations[0]["bbox"]
-            x_min = np.clip(x_min, 0, x_max)
-            y_min = np.clip(y_min, 0, y_max)
+        if sum(bounding_box_test.loc[image_path]):
+            x_min, y_min, x_max, y_max = bounding_box_test.loc[image_path]
             image = image[int(y_min):int(y_max), int(x_min):int(x_max)]
-        except:
+        else:
             image = Image.open(self.img_paths[index])
             image = CenterCrop(300)(image)
 

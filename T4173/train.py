@@ -16,16 +16,14 @@ from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader, random_split
 import torch.utils.data as data
 from torch.utils.tensorboard import SummaryWriter
-
 from dataset import MaskBaseDataset
 
-from cutmix.cutmix import CutMix
-from cutmix.utils import CutMixCrossEntropyLoss
 import timm
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score  # from torchmetrics.classification import MulticlassF1Score
+from sklearn.model_selection import StratifiedKFold
 from importlib import import_module
 from loss import create_criterion
 import gc
@@ -42,7 +40,42 @@ def seed_everything(seed):
     np.random.seed(seed)
     random.seed(seed)
 
+def rand_bbox(size, lam):
+    W = size[2]
+    H = size[3]
+    cut_rat = np.sqrt(1. - lam)
+    cut_w = np.int(W * cut_rat)
+    cut_h = np.int(H * cut_rat)
 
+    # uniform
+    cx = np.random.randint(W)
+    cy = np.random.randint(H)
+
+    bbx1 = np.clip(cx - cut_w // 2, 0, W)
+    bby1 = np.clip(cy - cut_h // 2, 0, H)
+    bbx2 = np.clip(cx + cut_w // 2, 0, W)
+    bby2 = np.clip(cy + cut_h // 2, 0, H)
+
+    return bbx1, bby1, bbx2, bby2
+    
+class CutMix(object):
+    def __init__(self, beta, cutmix_prob) -> None:
+        super().__init__()
+        self.beta = beta
+        self.cutmix_prob = cutmix_prob
+        
+    def forward(self, images, labels):
+        lam = np.random.beta(self.beta, self.beta)
+        rand_index = torch.randperm(images.size()[0]).cuda()
+        label_1 = labels
+        label_2 = labels[rand_index]
+        bbx1, bby1, bbx2, bby2 = rand_bbox(images.size(), lam)
+        images[:, :, bbx1:bbx2, bby1:bby2] = images[rand_index, :, bbx1:bbx2, bby1:bby2]
+        
+        lam = 1 - ((bbx2-bbx1)*(bby2-bby1)/(images.size()[-1]*images.size()[-2]))
+        
+        return {'lam': lam, 'image': images, 'label_1': label_1, 'label_2': label_2}
+    
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
         return param_group['lr']
@@ -134,8 +167,10 @@ def train(data_dir, model_dir, args):
     train_set.dataset.set_transform(train_transform)
     val_set.dataset.set_transform(val_transform)
     
-    # cutmix
-    train_set = CutMix(train_set, num_class=18, beta=1.0, prob=0.3, num_mix=2)
+    # cutmix ; 하이퍼파라미터 설정
+    use_cutmix = True
+    cutmix_prob = 0.3
+    cutmix = CutMix(beta=1.0, cutmix_prob=cutmix_prob)
 
     train_loader = DataLoader(
         train_set,
@@ -154,6 +189,10 @@ def train(data_dir, model_dir, args):
         pin_memory=use_cuda,
         drop_last=False,
     )
+    
+    # 5-fold Stratified KFold 5개의 fold를 형성하고 5번 Cross Validation을 진행
+    #n_splits = 5
+    #skf = StratifiedKFold(n_splits=n_splits)
 
     # -- model
     model_module = getattr(import_module("model"), args.model)  # default: ResNet34
@@ -163,6 +202,8 @@ def train(data_dir, model_dir, args):
     model = torch.nn.DataParallel(model)
 
     # -- loss & metric
+#     f1_macro = MulticlassF1Score(num_classes=18, average='macro').to(device)
+#     f1_micro = MulticlassF1Score(num_classes=18, average='micro').to(device)
     criterion = create_criterion(args.criterion)  # default: cross_entropy
     opt_module = getattr(import_module("torch.optim"), args.optimizer)  # default: AdamW
     optimizer = opt_module(
@@ -175,14 +216,13 @@ def train(data_dir, model_dir, args):
     patience = 12
     triggertimes = 0
 
-    criterion_cutmix = CutMixCrossEntropyLoss(True).to(device)
-
     # -- logging
     logger = SummaryWriter(log_dir=save_dir)
     with open(os.path.join(save_dir, 'config.json'), 'w', encoding='utf-8') as f:
         json.dump(vars(args), f, ensure_ascii=False, indent=4)
 
-    best_f1 = 0
+    best_f1_macro = 0
+    best_f1_micro = 0
     best_val_loss = np.inf
     for epoch in range(args.epochs):
         # train loop
@@ -195,10 +235,23 @@ def train(data_dir, model_dir, args):
             labels = labels.to(device)
 
             optimizer.zero_grad()
+            
+            if use_cutmix:
+                ratio = np.random.rand(1)
+                if ratio < cutmix_prob:
+                    sample = cutmix.forward(inputs, labels)
+                    outs = model(sample['image'])
+                    preds = torch.argmax(outs, dim=-1)
+                    loss = criterion(outs, sample['label_1'])*sample['lam'] + criterion(outs, sample['label_2']) * (1. - sample['lam'])
+                else:
+                    outs = model(inputs)
+                    preds = torch.argmax(outs, dim=-1)
+                    loss = criterion(outs, labels)
+            else:
+                outs = model(inputs)
+                preds = torch.argmax(outs, dim=-1)
 
-            outs = model(inputs)
-            preds = torch.argmax(outs, dim=-1)
-            loss = criterion_cutmix(outs, labels) #cutmix : criterion_cutmix
+                loss = criterion(outs, labels)
 
             loss.backward()
             optimizer.step()
@@ -235,7 +288,7 @@ def train(data_dir, model_dir, args):
                 acc_item = (labels == preds).sum().item()
                 val_loss_items.append(loss_item)
                 val_acc_items.append(acc_item)
-
+                
                 if figure is None:
                     inputs_np = torch.clone(inputs).detach().cpu().permute(0, 2, 3, 1).numpy()
                     inputs_np = MaskBaseDataset.denormalize_image(inputs_np, dataset.mean, dataset.std)
@@ -243,22 +296,28 @@ def train(data_dir, model_dir, args):
 
             val_loss = np.sum(val_loss_items) / len(val_loader)
             val_acc = np.sum(val_acc_items) / len(val_set)
-            f1 = f1_score(y_true=labels.cpu().numpy(), y_pred=preds.cpu().numpy(), average="macro")
+            macro = f1_score(y_true=labels.cpu().numpy(), y_pred=preds.cpu().numpy(), average="macro")  # f1_macro(preds, labels)
+            micro = f1_score(y_true=labels.cpu().numpy(), y_pred=preds.cpu().numpy(), average="micro")  # f1_micro(preds, labels) 
             
-            if f1 > best_f1:
-                print(f"New best model for F1-Score : {f1:4.2%}! saving the best model..")
-                torch.save(model.module.state_dict(), f"{save_dir}/best.pth")
-                best_f1 = f1
+            if macro >= best_f1_macro:
+                print(f"New best model for F1(macro)-Score : {macro:4.2%}! saving the best model..")
+                torch.save(model.module.state_dict(), f"{save_dir}/best_macro.pth")
+                best_f1_macro = macro
+            if micro >= best_f1_micro:
+                print(f"New best model for F1(micro)-Score : {micro:4.2%}! saving the best model..")
+                torch.save(model.module.state_dict(), f"{save_dir}/best_micro.pth")
+                best_f1_micro = micro
             
             best_val_loss = min(best_val_loss, val_loss)
             torch.save(model.module.state_dict(), f"{save_dir}/last.pth")
             print(
-                f"[Val] acc : {val_acc:4.2%}, F1-Score : {f1:4.2%}, loss: {val_loss:4.2} || "
-                f"best F1-Score : {best_f1:4.2%}, best loss: {best_val_loss:4.2}"
+                f"[Val] acc : {val_acc:4.2%}, F1(macro)-Score : {macro:4.2%}, F1(micro)-Score : {micro:4.2%}, loss: {val_loss:4.2} || "
+                f"best F1(macro)-Score : {best_f1_macro:4.2%}, best F1(micro)-Score : {best_f1_micro:4.2%}, best loss: {best_val_loss:4.2}"
             )
             logger.add_scalar("Val/loss", val_loss, epoch)
             logger.add_scalar("Val/accuracy", val_acc, epoch)
-            logger.add_scalar("Val/f1-score", f1, epoch)
+            logger.add_scalar("Val/f1(macro)-score", macro, epoch)
+            logger.add_scalar("Val/f1(micro)-score", micro, epoch)
             logger.add_figure("results", figure, epoch)
 
             # Early stopping
