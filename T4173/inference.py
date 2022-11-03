@@ -47,6 +47,7 @@ def inference(data_dir, model_dir, output_dir, args):
     dataset = TestDataset(img_paths)
     
     transform = A.Compose([
+        A.CLAHE(p=1, clip_limit=3.0),
         A.Resize(height=224, width=224),
         A.Normalize(mean=(0.56, 0.524, 0.501), std=(0.233, 0.243, 0.246)),
         ToTensorV2(),

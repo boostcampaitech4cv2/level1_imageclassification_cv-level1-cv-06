@@ -7,10 +7,13 @@ from typing import Tuple, List
 import pandas as pd
 import numpy as np
 from PIL import Image
-from torch.utils.data import Dataset, Subset
+import torch
+from torch.utils.data import Dataset, Subset, WeightedRandomSampler
 import torch.utils.data as data
 from torchvision.transforms import Resize, ToTensor, Normalize, Compose, CenterCrop, ToTensor
 import albumentations as A
+
+from collections import defaultdict
 
 
 bounding_box = pd.read_csv('./../bounding_box.csv')
@@ -88,38 +91,74 @@ class MaskBaseDataset(data.Dataset):
     gender_labels = []
     age_labels = []
 
-    def __init__(self, data_dir, mean=(0.56, 0.524, 0.501), std=(0.233, 0.243, 0.246)):
+    def __init__(self, data_dir, mean=(0.56, 0.524, 0.501), std=(0.233, 0.243, 0.246), val_ratio=0.2):
         self.data_dir = data_dir
         self.mean = mean
         self.std = std
-
-        self.transform = None
+        self.val_ratio = val_ratio
+        self.indices = defaultdict(list)
+        
         self.setup()
         self.calc_statistics()
         
+        
+    @staticmethod
+    def _split_profile(profiles, val_ratio):
+        total_len = len(profiles)
+        n_val = int(total_len * val_ratio)
+        total_indices = range(total_len)
+        val_indices = set(random.choices(total_indices, k=n_val))
+        train_indices = set(total_indices) - val_indices
+        
+        return {"train": train_indices, "val": val_indices}
+    
     def setup(self):
         profiles = os.listdir(self.data_dir)
-        for profile in profiles:
-            if profile.startswith("."):  # "." 로 시작하는 파일은 무시합니다
-                continue
+        profiles = [profile for profile in profiles if not profile.startswith(".")]
+        split_profiles = self._split_profile(profiles, self.val_ratio)
 
-            img_folder = os.path.join(self.data_dir, profile)
-            for file_name in os.listdir(img_folder):
-                _file_name, ext = os.path.splitext(file_name)
-                if _file_name not in self._file_names:  # "." 로 시작하는 파일 및 invalid 한 파일들은 무시합니다
-                    continue
+        cnt = 0
+        for phase, indices in split_profiles.items():
+            for _idx in indices:
+                profile = profiles[_idx]
+                img_folder = os.path.join(self.data_dir, profile)
+                for file_name in os.listdir(img_folder):
+                    _file_name, ext = os.path.splitext(file_name)
+                    if _file_name not in self._file_names:  # "." 로 시작하는 파일 및 invalid 한 파일들은 무시합니다
+                        continue
 
-                img_path = os.path.join(self.data_dir, profile, file_name)  # (resized_data, 000004_male_Asian_54, mask1.jpg)
-                mask_label = self._file_names[_file_name]
+                    img_path = os.path.join(self.data_dir, profile, file_name)
+                    mask_label = self._file_names[_file_name]
 
-                id, gender, race, age = profile.split("_")
-                gender_label = GenderLabels.from_str(gender)
-                age_label = AgeLabels.from_number(age)
+                    id, gender, race, age = profile.split("_")
+                    if (27 < int(age) < 30) or (57 < int(age) < 60) :
+                        continue
+                    gender_label = GenderLabels.from_str(gender)
+                    age_label = AgeLabels.from_number(age)
 
-                self.image_paths.append(img_path)
-                self.mask_labels.append(mask_label)
-                self.gender_labels.append(gender_label)
-                self.age_labels.append(age_label)
+                    self.image_paths.append(img_path)
+                    self.mask_labels.append(mask_label)
+                    self.gender_labels.append(gender_label)
+                    self.age_labels.append(age_label)
+
+                    self.indices[phase].append(cnt)
+                    cnt += 1
+    
+    def split_dataset(self) -> List[Subset]:
+        return [Subset(self, indices) for phase, indices in self.indices.items()]
+    
+    def get_sampler(self, phase) :
+        _multi_class = []
+        for _idx in self.indices[phase]:
+            _multi_class.append(self.encode_multi_class(self.mask_labels[_idx], self.gender_labels[_idx], self.age_labels[_idx]))
+        
+        size = len(_multi_class)
+        class_counts = pd.DataFrame(_multi_class).value_counts().to_list()        
+        class_weights = [size / class_counts[i] for i in range(len(class_counts))] #클래스별 가중치 부여
+        weights = [class_weights[_multi_class[i]] for i in range(size)]            #해당 레이블마다의 가중치 비율
+        sampler = WeightedRandomSampler(torch.DoubleTensor(weights), size)
+    
+        return sampler
 
     def calc_statistics(self):
         has_statistics = self.mean is not None and self.std is not None
@@ -135,8 +174,11 @@ class MaskBaseDataset(data.Dataset):
             self.mean = np.mean(sums, axis=0) / 255
             self.std = (np.mean(squared, axis=0) - self.mean ** 2) ** 0.5 / 255
 
-    def set_transform(self, transform):
-        self.transform = transform
+    def set_train_transform(self, transform):
+        self.train_transform = transform
+        
+    def set_val_transform(self, transform):
+        self.val_transform = transform
 
     def __getitem__(self, index):
         image_path = self.image_paths[index]
@@ -155,7 +197,11 @@ class MaskBaseDataset(data.Dataset):
         age_label = self.get_age_label(index)
         multi_class_label = self.encode_multi_class(mask_label, gender_label, age_label)
         
-        image_transform = self.transform(image = np.array(image))["image"]
+        if index in self.indices["train"]:
+            image_transform =  self.train_transform(image = np.array(image))["image"]
+        else:
+            image_transform =  self.val_transform(image = np.array(image))["image"]
+
         return image_transform, multi_class_label
 
     def __len__(self):

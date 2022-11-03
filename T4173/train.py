@@ -27,6 +27,7 @@ from sklearn.model_selection import StratifiedKFold
 from importlib import import_module
 from loss import create_criterion
 import gc
+import math
 
 gc.collect()
 torch.cuda.empty_cache()
@@ -144,51 +145,59 @@ def train(data_dir, model_dir, args):
     num_classes = dataset.num_classes  # 18
 
     # -- data_loader
-    n_val = int(len(dataset) * 0.3)
-    n_train = len(dataset) - n_val
-    train_set, val_set = data.random_split(dataset, [n_train, n_val])
+    train_set, val_set = dataset.split_dataset()
+    
+    train_sampler = dataset.get_sampler("train")
+    val_sampler = dataset.get_sampler("val")
     
     # -- augmentation
     train_transform = A.Compose([
-        A.CLAHE(p=0.5),
+        A.CLAHE(p=1, clip_limit=3.0),
+        A.ColorJitter(0.1, 0.1, 0.1, 0.1),
+        A.GaussNoise(p=0.3, var_limit=(0.0, 25)),
+        A.GridDistortion(p=0.3, distort_limit=(-0.02, 0.05)),
+        A.ISONoise(),
+        A.ElasticTransform(p=0.3, alpha=0.2, sigma=3, alpha_affine=2),
         A.Resize(height=224, width=224),
+        A.CoarseDropout(p=0.3, max_holes=20, max_height=10, max_width=15, min_holes=1, min_height=5, min_width=5),
         A.HorizontalFlip(p=0.5),
         A.Normalize(mean=(0.56, 0.524, 0.501), std=(0.233, 0.243, 0.246)),
         ToTensorV2(),
     ])
     
     val_transform = A.Compose([
+        A.CLAHE(p=1, clip_limit=3.0),
         A.Resize(height=224, width=224),
         A.HorizontalFlip(p=0.5),
         A.Normalize(mean=(0.56, 0.524, 0.501), std=(0.233, 0.243, 0.246)),
         ToTensorV2(),
     ])
     
-    train_set.dataset.set_transform(train_transform)
-    val_set.dataset.set_transform(val_transform)
+    train_set.dataset.set_train_transform(train_transform)
+    val_set.dataset.set_val_transform(val_transform)
     
-    # cutmix ; 하이퍼파라미터 설정
-    use_cutmix = True
-    cutmix_prob = 0.3
-    cutmix = CutMix(beta=1.0, cutmix_prob=cutmix_prob)
-
     train_loader = DataLoader(
         train_set,
         batch_size=args.batch_size,
         num_workers=0,
-        shuffle=True,
         pin_memory=use_cuda,
         drop_last=False,
+        sampler = train_sampler,
     )
 
     val_loader = DataLoader(
         val_set,
         batch_size=args.batch_size,
         num_workers=0,
-        shuffle=True,
         pin_memory=use_cuda,
         drop_last=False,
+        sampler = val_sampler,
     )
+    
+    # cutmix ; 하이퍼파라미터 설정
+    use_cutmix = True
+    cutmix_prob = 0.5
+    cutmix = CutMix(beta=1.0, cutmix_prob=cutmix_prob)
     
     # 5-fold Stratified KFold 5개의 fold를 형성하고 5번 Cross Validation을 진행
     #n_splits = 5
@@ -299,6 +308,8 @@ def train(data_dir, model_dir, args):
             val_loss = np.sum(val_loss_items) / len(val_loader)
             val_acc = np.sum(val_acc_items) / len(val_set)
             
+            scheduler.step(val_loss)
+            
             f1 = f1_score(val_labels, val_preds, average='macro')  # f1_macro(preds, labels)
             
             if f1 >= best_f1:
@@ -329,8 +340,6 @@ def train(data_dir, model_dir, args):
                 print('trigger times: 0')
                 trigger_times = 0
             
-            scheduler.step(val_loss)
-            
             print()
 
 
@@ -342,7 +351,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=1, help='number of epochs to train (default: 1)')
     parser.add_argument('--batch_size', type=int, default=64, help='input batch size for training (default: 64)')
     parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
-    parser.add_argument('--val_ratio', type=float, default=0.3, help='ratio for validaton (default: 0.3)')
+    parser.add_argument('--val_ratio', type=float, default=0.2, help='ratio for validaton (default: 0.2)')
     parser.add_argument('--lr_decay_step', type=int, default=20, help='learning rate scheduler deacy step (default: 20)')
     parser.add_argument('--model', type=str, default='ResNet34', help='model type (default: ResNet34)')
     parser.add_argument('--optimizer', type=str, default='AdamW', help='optimizer type (default: AdamW)')
