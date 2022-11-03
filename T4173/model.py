@@ -30,27 +30,7 @@ class ResNet34(nn.Module):
     def forward(self, x):
         x = self.model(x)
         return x
-    
-class resnet152_bitm(nn.Module):
-    def __init__(self, num_classes):
-        super().__init__()
-        
-        self.model = timm.create_model('resnetv2_152x2_bitm', pretrained=True, num_classes=num_classes)
-        
-    def forward(self, x):
-        x = self.model(x)
-        return x
-    
-class efficientnet_b3(nn.Module):
-    def __init__(self, num_classes):
-        super().__init__()
-        
-        self.model = timm.create_model('efficientnet_b3', pretrained=True, num_classes=num_classes)
-        
-    def forward(self, x):
-        x = self.model(x)
-        return x
-    
+
 class efficientnet_b4(nn.Module):
     def __init__(self, num_classes):
         super().__init__()
@@ -60,22 +40,12 @@ class efficientnet_b4(nn.Module):
     def forward(self, x):
         x = self.model(x)
         return x
-
-class efficientnetv2_m(nn.Module):
-    def __init__(self, num_classes):
-        super().__init__()
-        
-        self.model = timm.create_model('tf_efficientnetv2_m', pretrained=True, num_classes=num_classes)
-        
-    def forward(self, x):
-        x = self.model(x)
-        return x
     
-class vit_large_224(nn.Module):
+class vit_base_224(nn.Module):
     def __init__(self, num_classes):
         super().__init__()
         
-        self.model = timm.create_model('vit_large_patch16_224', pretrained = True, num_classes=num_classes)
+        self.model = timm.create_model('vit_base_patch16_224', pretrained = True, num_classes=num_classes)
         
     def forward(self, x):
         x = self.model(x)
@@ -89,11 +59,11 @@ class swin_base_224(nn.Module):
     def forward(self, x):
         x = self.model(x)
         return x
-
-class swin_base_384(nn.Module):
+    
+class eca_nfnet(nn.Module):
     def __init__(self, num_classes):
         super().__init__()
-        self.model = timm.create_model('swin_base_patch4_window12_384', pretrained=True, num_classes=num_classes)
+        self.model = timm.create_model('eca_nfnet_l0', pretrained=True, num_classes=num_classes)
     
     def forward(self, x):
         x = self.model(x)
