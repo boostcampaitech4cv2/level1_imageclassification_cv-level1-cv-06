@@ -7,9 +7,9 @@ Soft voting
 timm 의 'ViT_base_patch16_224' 모델 사용
 
 ## Data Preprocessing
-Age band -> young : < 30
-         -> middle : 30 < <57
-         -> old : 57 <
+Age band : young : < 30
+         : middle : 30 < <57
+         : old : 57 <
 
 ## Data Augmentation
 k_fold_train.py 확인
