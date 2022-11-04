@@ -21,8 +21,8 @@ def load_model(saved_model, num_classes, device):
     # tar = tarfile.open(tarpath, 'r:gz')
     # tar.extractall(path=saved_model)
 
-    model_path = os.path.join(saved_model, 'best.pth')
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    best_model_path = os.path.join(saved_model, 'best.pth') # ./model/SEnet01/best.pth
+    model.load_state_dict(torch.load(best_model_path, map_location=device))
 
     return model
 
@@ -35,10 +35,12 @@ def inference(data_dir, model_dir, output_dir, args):
     device = torch.device("cuda" if use_cuda else "cpu")
 
     num_classes = MaskBaseDataset.num_classes  # 18
-    model = load_model(model_dir, num_classes, device).to(device)
+    # model_dir = './model/SEnet01'
+    print(model_dir, '-->> model_dir')
+    model = load_model(args.model_dir, num_classes, device).to(device)
     model.eval()
 
-    img_root = os.path.join(data_dir, 'images')
+    img_root = os.path.join(data_dir, 'images')   # '/opt/ml/input/data/eval/images'
     info_path = os.path.join(data_dir, 'info.csv')
     info = pd.read_csv(info_path)
 
@@ -58,7 +60,7 @@ def inference(data_dir, model_dir, output_dir, args):
     with torch.no_grad():
         for idx, images in enumerate(loader):
             images = images.to(device)
-            pred = model(images)
+            pred = model.forward(images)
             pred = pred.argmax(dim=-1)
             preds.extend(pred.cpu().numpy())
 
@@ -73,13 +75,13 @@ if __name__ == '__main__':
 
     # Data and model checkpoints directories
     parser.add_argument('--batch_size', type=int, default=1000, help='input batch size for validing (default: 1000)')
-    parser.add_argument('--resize', type=tuple, default=(128,96), help='resize size for image when you trained (default: (96, 128))')
+    parser.add_argument('--resize', type=tuple, default=(224,224), help='resize size for image when you trained (default: (96, 128))')
     parser.add_argument('--model', type=str, default='BaseModel', help='model type (default: BaseModel)')
 
     # Container environment
     parser.add_argument('--data_dir', type=str, default=os.environ.get('SM_CHANNEL_EVAL', '/opt/ml/input/data/eval'))
     # parser.add_argument('--model_dir', type=str, default=os.environ.get('SM_CHANNEL_MODEL', './model/exp'))
-    parser.add_argument('--model_dir', type=str, default=os.environ.get('SM_CHANNEL_MODEL', './model/densenet'))
+    parser.add_argument('--model_dir', type=str, default=os.environ.get('SM_CHANNEL_MODEL', './model/SEnet01'))
     parser.add_argument('--output_dir', type=str, default=os.environ.get('SM_OUTPUT_DATA_DIR', './output'))
 
     args = parser.parse_args()

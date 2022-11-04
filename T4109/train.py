@@ -19,6 +19,8 @@ from torch.utils.tensorboard import SummaryWriter
 from dataset import MaskBaseDataset
 from loss import create_criterion
 
+from sklearn.metrics import f1_score
+
 
 def seed_everything(seed):
     torch.manual_seed(seed)
@@ -95,7 +97,7 @@ def train(data_dir, model_dir, args):
     ## -- dataset
     # dataset_module = dataset.MaskBaseDataset
     dataset_module = getattr(import_module("dataset"), args.dataset)  # default: MaskBaseDataset
-    # 
+    # dataset = dataset.MaskBaseDataset(data_dir=data_dir)
     dataset = dataset_module(
         data_dir=data_dir,
     )
@@ -133,7 +135,9 @@ def train(data_dir, model_dir, args):
     )
 
     ## -- model
+    # model_module = model.BaseModel
     model_module = getattr(import_module("model"), args.model)  # default: BaseModel
+    # model = model.BaseModel(num_classes=num_classes)
     model = model_module(
         num_classes=num_classes
     ).to(device)
@@ -166,9 +170,14 @@ def train(data_dir, model_dir, args):
     logger = SummaryWriter(log_dir=save_dir)
     with open(os.path.join(save_dir, 'config.json'), 'w', encoding='utf-8') as f:
         json.dump(vars(args), f, ensure_ascii=False, indent=4)
+    # torch.save(args.note, f"{save_dir}/note.txt")
+    with open(os.path.join(save_dir, 'note.json'), 'w', encoding='utf-8') as f:
+        json.dump(args.note, f, ensure_ascii=False, indent=4)
 
     best_val_acc = 0
     best_val_loss = np.inf
+    best_val_f1 = 0
+    
     for epoch in range(args.epochs):
         # train loop
         model.train()
@@ -176,20 +185,50 @@ def train(data_dir, model_dir, args):
         matches = 0
 
         for idx, train_batch in enumerate(train_loader):
+            
+            # NOT MULTI-LABEL
             inputs, labels = train_batch
             inputs = inputs.to(device)
             labels = labels.to(device)
 
             optimizer.zero_grad()
 
-            outs = model(inputs)
-            preds = torch.argmax(outs, dim=-1)
+            outs = model.forward(inputs)
             loss = criterion(outs, labels)
 
             loss.backward()
             optimizer.step()
 
             loss_value += loss.item()
+            preds = torch.argmax(outs, dim=-1)
+
+            
+            
+            
+            # # MULTI-LABEL
+            # inputs, (mask_labels, gender_labels, age_labels) = train_batch
+            # inputs = inputs.to(device)
+            # mask_labels = mask_labels.to(device)
+            # gender_labels = gender_labels.to(device)
+            # age_labels = age_labels.to(device)
+            
+            # optimizer.zero_grad()
+            
+            # outs = model.forward(inputs)
+            # mask_outs, gender_outs, age_outs = torch.split(outs, [3,2,3], dim=1)
+            # mask_loss = criterion(mask_outs, mask_labels)
+            # gender_loss = criterion(gender_outs, gender_labels)
+            # age_loss = criterion(age_outs, age_labels)
+            # loss = mask_loss + gender_loss + 1.2*age_loss       # if model sucks as guessing 'age'
+            
+            # loss.backward()
+            # optimizer.step()
+            
+            # loss_value += loss.item()
+            # preds = 
+            
+            
+            
             matches += (preds == labels).sum().item()
             if (idx + 1) % args.log_interval == 0:
                 train_loss = loss_value / args.log_interval
@@ -214,6 +253,11 @@ def train(data_dir, model_dir, args):
             model.eval()
             val_loss_items = []
             val_acc_items = []
+            
+            # for f1 score
+            epoch_preds = []
+            epoch_labels = []
+            
             figure = None
             for val_batch in val_loader:
                 inputs, labels = val_batch
@@ -228,6 +272,10 @@ def train(data_dir, model_dir, args):
                 val_loss_items.append(loss_item)
                 val_acc_items.append(acc_item)
 
+                # for f1 score
+                epoch_preds += preds.detach().cpu().numpy().tolist()
+                epoch_labels += labels.detach().cpu().numpy().tolist()
+                
                 if figure is None:
                     inputs_np = torch.clone(inputs).detach().cpu().permute(0, 2, 3, 1).numpy()
                     inputs_np = dataset_module.denormalize_image(inputs_np, dataset.mean, dataset.std)
@@ -238,14 +286,20 @@ def train(data_dir, model_dir, args):
 
             val_loss = np.sum(val_loss_items) / len(val_loader)
             val_acc = np.sum(val_acc_items) / len(val_set)
-            best_val_loss = min(best_val_loss, val_loss)
+            val_f1 = f1_score(epoch_labels, epoch_preds, average='micro')
             
             scheduler.step(val_loss)
             
+            best_val_loss = min(best_val_loss, val_loss)            
             if val_acc > best_val_acc:
-                print(f"New best model for val accuracy : {val_acc:4.2%}! saving the best model..")
-                torch.save(model.module.state_dict(), f"{save_dir}/best.pth")
+                # print(f"New best model for val accuracy : {val_acc:4.2%}! saving the best model..")
+                # torch.save(model.module.state_dict(), f"{save_dir}/best.pth")
                 best_val_acc = val_acc
+            if val_f1 > best_val_f1:
+                print(f"New best model for val f1 : {val_f1:4.2%}! saving the best model..")
+                torch.save(model.module.state_dict(), f"{save_dir}/best.pth")
+                best_val_f1 = val_f1
+                
             torch.save(model.module.state_dict(), f"{save_dir}/last.pth")
             print(
                 f"[Val] acc : {val_acc:4.2%}, loss: {val_loss:4.2} || "
@@ -253,6 +307,7 @@ def train(data_dir, model_dir, args):
             )
             logger.add_scalar("Val/loss", val_loss, epoch)
             logger.add_scalar("Val/accuracy", val_acc, epoch)
+            logger.add_scalar("Val/f1", val_f1, epoch)
             logger.add_figure("results", figure, epoch)
             print()
 
@@ -271,12 +326,13 @@ if __name__ == '__main__':
     parser.add_argument('--model', type=str, default='BaseModel', help='model type (default: BaseModel)')
     parser.add_argument('--optimizer', type=str, default='AdamW', help='optimizer type (default: SGD)')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate (default: 1e-3)')
-    parser.add_argument('--val_ratio', type=float, default=0.2, help='ratio for validaton (default: 0.2)')
+    parser.add_argument('--val_ratio', type=float, default=0.1, help='ratio for validaton (default: 0.2)')
     parser.add_argument('--criterion', type=str, default='focal', help='criterion type (default: cross_entropy)')
     parser.add_argument('--lr_decay_step', type=int, default=20, help='learning rate scheduler decay step (default: 20)')
     parser.add_argument('--log_interval', type=int, default=20, help='how many batches to wait before logging training status')
     parser.add_argument('--name', default='exp', help='model save at {SM_MODEL_DIR}/{name}')
     parser.add_argument('--scheduler', type=str, default='ReduceLROnPlateau', help='scheduler: StepLR, CosineAnnealingLR, ReduceLROnPlateau...')
+    parser.add_argument('--note', type=str)
 
 
     # Container environment
@@ -285,6 +341,13 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     print(args)
+    # print('))))' * 50)
+    # print(vars(args))
+    # print('))))' * 50)
+
+    # from T4064
+    for arg in vars(args):
+        print(arg, "-->>",getattr(args, arg))
 
     data_dir = args.data_dir
     model_dir = args.model_dir
@@ -294,27 +357,14 @@ if __name__ == '__main__':
 
 
 
-
-# import argparse
-
-# # create the parser
-# parser = argparse.ArgumentParser()
-
-# # add an argument
-# # parser.add_argument('--name', type=str, required=True, )
-# parser.add_argument('--age', type=int, nargs='+')
-
-# # parse the argument
-# args = parser.parse_args()
-
-# print(f'hello {args.age}')
-# print(args)
-
-
 # loss(criterion): focal
 # optimizer: AdamW {default: SGD}
 # scheduler: ReduceLROnPlateau(hard coded)
 
 
 
-# python train.py --model MyDensenet121  --epochs 50 --augmentation BaseAugmentation_size --criterion focal --optimizer AdamW --name 'model:MyDensenet121, epoch:50, augmentation:Soft, loss:focal, optimizer:AdamW, scheduler:reduceplateau'
+# python train.py --model MyResnet34 --epochs 50 --augmentation BaseAugmentation_size --criterion focal --optimizer AdamW --name 'Resnet34_02' --note 'model:MyResnet34, epoch:50, augmentation:Soft, loss:focal, optimizer:AdamW, scheduler:reduceplateau'
+# python train.py --model swin_base_patch4_window7_224 --epochs 50 --augmentation BaseAugmentation_size --criterion focal --optimizer AdamW --name 'swin_base_patch4_window7_224' --note 'model:swin_base_patch4_window7_224, epoch:50, augmentation:Soft, loss:focal, optimizer:AdamW, scheduler:reduceplateau'
+
+
+

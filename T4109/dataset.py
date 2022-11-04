@@ -62,7 +62,17 @@ class BaseAugmentation_size:
             A.Resize(height=224, width=224, interpolation=Image.BILINEAR),
             A.HorizontalFlip(p=0.5),
             A.GaussianBlur(p=0.2),
+            A.RGBShift(r_shift_limit=15, g_shift_limit=15, b_shift_limit=15, p=0.3),
+            A.ColorJitter(0.1, 0.1, 0.1, 0.1),
+            A.CLAHE(p=0.3),
+            A.Sharpen(p=0.2),
+            A.OpticalDistortion(p=0.3),
+            A.GridDistortion(p=0.1),
+            A.GaussNoise(p=0.2),
+            A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.5),
+            A.RandomFog(fog_coef_lower=0.3, fog_coef_upper=1, alpha_coef=0.08, always_apply=False, p=0.5),
             A.GridDistortion(p=0.2),
+            A.GridDropout(p=1.0,holes_number_x=8,holes_number_y=8),
             A.Rotate(limit=10, p=0.5),
             A.Normalize(mean=(0.5602,0.5241,0.5015),
                         std=(0.2332,0.2430,0.2457), p=1.0),
@@ -292,6 +302,7 @@ class MaskBaseDataset(Dataset):
         return train_set, val_set
 
 
+
 class MaskSplitByProfileDataset(MaskBaseDataset):
     """
         train / val 나누는 기준을 이미지에 대해서 random 이 아닌
@@ -350,6 +361,7 @@ class MaskSplitByProfileDataset(MaskBaseDataset):
         return [Subset(self, indices) for phase, indices in self.indices.items()]
 
 
+
 class TestDataset(Dataset):
     def __init__(self, img_paths, resize, mean=(0.548, 0.504, 0.479), std=(0.237, 0.247, 0.246)):
         self.img_paths = img_paths
@@ -369,3 +381,33 @@ class TestDataset(Dataset):
     def __len__(self):
         return len(self.img_paths)
 
+
+
+class MaskMultiLabelDataset(MaskBaseDataset):
+    num_classes = 3 + 2 + 3
+
+    def __getitem__(self, index):
+        assert (self.transform is not None), ('use .set_transform to pass an augmentation')
+        
+        images = Image.open(self.image_paths[index])
+        mask_labels = self.mask_labels[index]
+        gender_labels = self.gender_labels[index]
+        age_labels = self.age_labels[index]
+        
+        images_transform = self.transform(images)
+        return images_transform, (mask_labels, gender_labels, age_labels)
+        
+        
+        
+        
+    # def __getitem__(self, index):
+    #     assert self.transform is not None, ".set_tranform 메소드를 이용하여 transform 을 주입해주세요"
+
+    #     image = self.read_image(index)
+    #     mask_label = self.get_mask_label(index)
+    #     gender_label = self.get_gender_label(index)
+    #     age_label = self.get_age_label(index)
+    #     multi_class_label = self.encode_multi_class(mask_label, gender_label, age_label)
+
+    #     image_transform = self.transform(image)
+    #     return image_transform, multi_class_label

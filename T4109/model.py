@@ -151,7 +151,7 @@ class MyDensenet121(nn.Module):
     
     
     
-class MySenet34(nn.Module):
+class MySenet50(nn.Module):
     def __init__(self, num_classes):
         super().__init__()
 
@@ -162,7 +162,7 @@ class MySenet34(nn.Module):
         """
         
         
-        self.model = timm.create_model('seresnet34', num_classes=num_classes, pretrained=True)
+        self.model = timm.create_model('seresnet50', num_classes=num_classes, pretrained=True)
         
 
     def forward(self, x):
@@ -187,7 +187,7 @@ class vit_base_patch32_224(nn.Module):
         3. 모델의 output_dimension 은 num_classes 로 설정해주세요.
         """
         
-        self.model = timm.create_model('vit_base_patch32_224')
+        self.model = timm.create_model('vit_base_patch32_224', num_classes=num_classes, pretrained=True)
 
     def forward(self, x):
         """
