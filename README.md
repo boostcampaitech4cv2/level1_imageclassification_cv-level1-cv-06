@@ -72,7 +72,39 @@ backbone을 서로 다른 조건으로 학습한 상위 5개 모델의 inference
 
 # 👨‍👨‍👧‍👧 팀 구성 및 역할
 
-| [이혜진_T4177](https://github.com/iihye) | [이하정_T4173](https://github.com/SS-hj/) | [김형훈_T4064](https://github.com/brotherhoon-code) | [김동영_T4027](https://github.com/iden2t) | [송영동_T4109](https://github.com/ydsong2) |
-| :--------------------------------------: | :---------------------------------------: | :-------------------------------------------------: | :---------------------------------------: | :----------------------------------------: |
-|         Data Analysis, Training          |             &nbsp; &nbsp; Data Processing &nbsp; &nbsp;             |                   &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;  Modeling  &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;                     |                &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; Training &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;                 |                 &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; Training &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;                 |
-
+<table>
+  <tr height="35px">
+    <td align="center" width="180px">
+      <a href="https://github.com/iihye">이혜진_T4177</a>
+    </td>
+    <td align="center" width="180px">
+      <a href="https://github.com/SS-hj">이하정_T4173</a>
+    </td>
+    <td align="center" width="180px">
+      <a href="https://github.com/brotherhoon-code">김형훈_T4064</a>
+    </td>
+    <td align="center" width="180px">
+      <a href="https://github.com/iden2t">김동영_T4027</a>
+    </td>
+    <td align="center" width="180px">
+      <a href="https://github.com/ydsong2">송영동_T4109</a>
+    </td>
+  </tr>
+  <tr height="35px">
+    <td align="center" width="180px">
+      <a> Data Analysis, Training </a>
+    </td>
+    <td align="center" width="180px">
+      <a> Data Processing </a>
+    </td>
+    <td align="center" width="180px">
+      <a> Modeling </a>
+    </td>
+    <td align="center" width="180px">
+      <a> Training </a>
+    </td>
+    <td align="center" width="180px">
+      <a> Training </a>
+    </td>
+  </tr>
+</table>
